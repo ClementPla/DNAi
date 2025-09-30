@@ -52,7 +52,7 @@ def get_local_commit(package_name="dnafiber"):
     return None
 
 
-def get_remote_commit(repo="ClementPla/DeepFiberQ"):
+def get_remote_commit(repo="ClementPla/DNAi"):
     """Return latest commit hash from GitHub main branch."""
     url = f"https://api.github.com/repos/{repo}/commits/main"
     r = requests.get(url, timeout=5)
@@ -71,7 +71,7 @@ def check_version():
             f"⚠️ Your install is outdated.\nLocal: {local[:7]} vs Remote: {remote[:7]}"
         )
         print(
-            "👉 Run: pip install --upgrade git+https://github.com/ClementPla/DeepFiberQ.git or auto-update"
+            "👉 Run: pip install --upgrade git+https://github.com/ClementPla/DNAi.git or auto-update"
         )
     else:
         print("✅ You are on the latest version.")
@@ -98,7 +98,7 @@ def main():
                     "install",
                     "--upgrade",
                     "--no-cache-dir",
-                    "git+https://github.com/ClementPla/DeepFiberQ.git",
+                    "git+https://github.com/ClementPla/DNAi.git",
                 ]
             )
             # Relaunch the script

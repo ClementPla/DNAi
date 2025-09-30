@@ -6,6 +6,7 @@ from skimage.segmentation import expand_labels
 from dnafiber.postprocess.utils import generate_svg
 import pickle
 import cv2
+from pathlib import Path
 
 
 @attrs.define
@@ -192,6 +193,7 @@ def filter_invalid_bbox(fibers: list[FiberProps]) -> list[FiberProps]:
 @attrs.define
 class Fibers:
     fibers: list[FiberProps] = attrs.field(factory=list, converter=filter_invalid_bbox)
+    path: Optional[str | Path] = None
 
     def __iter__(self):
         return iter(self.fibers)
@@ -288,6 +290,20 @@ class Fibers:
             [fiber for fiber in self.fibers if (fiber.is_acceptable and fiber.is_valid)]
         )
 
+    def filter_border(self, h, w, border=1):
+        return Fibers(
+            [
+                fiber
+                for fiber in self.fibers
+                if not (
+                    fiber.bbox[0] < border
+                    or fiber.bbox[1] < border
+                    or fiber.bbox[0] + fiber.bbox[2] > w - border
+                    or fiber.bbox[1] + fiber.bbox[3] > h - border
+                )
+            ]
+        )
+
     def only_double_copy(self):
         return Fibers([fiber for fiber in self.fibers if fiber.is_double])
 
@@ -312,6 +328,14 @@ class Fibers:
                 if fiber.bbox_intersect(other_fiber, ratio):
                     intersection.append_if_not_exists(fiber, ratio)
         return intersection
+
+    def order_as(self, other, ratio=0.5):
+        result = Fibers([])
+        for i, other_fiber in enumerate(other.fibers):
+            for fiber in self.fibers:
+                if fiber.bbox_intersect(other_fiber, ratio=ratio):
+                    result.append_if_not_exists(fiber, ratio=ratio)
+        return result
 
     def to_df(
         self, pixel_size=0.13, img_name: Optional[str] = None, filter_invalid=True
