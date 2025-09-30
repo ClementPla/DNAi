@@ -12,7 +12,7 @@ from dnafiber.postprocess import refine_segmentation
 from dnafiber.postprocess.fiber import FiberProps, Fibers
 from dnafiber.ui.inference import ui_inference_cacheless
 from dnafiber.data.utils import numpy_to_base64_png
-from dnafiber.ui.utils import get_image_cacheless, get_multifile_image, _get_model
+from dnafiber.ui.utils import get_image_cacheless, get_multifile_image
 from dnafiber.postprocess.error_detection import load_model
 import numpy as np
 
