@@ -190,7 +190,7 @@ def handle_ccs_with_junctions(
 
 def extract_fibers(
     mask,
-    post_process,
+    post_process=True,
     x_offset: int = 0,
     y_offset: int = 0,
 ):
