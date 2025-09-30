@@ -233,11 +233,11 @@ class Fibers:
 
             roi = labelmap[y0:y1, x0:x1]
             fiber_data = fiber.data[: y1 - y0, : x1 - x0]
-            if fiber_width > 1:
-                fiber_data = expand_labels(fiber_data, fiber_width)
+
             binary = fiber_data > 0
             roi[binary] = fiber_data[binary]
-
+        if fiber_width > 1:
+            labelmap = expand_labels(labelmap, fiber_width)
         return labelmap
 
     def get_bounding_boxes_map(self, h, w, width=1, image=None):
