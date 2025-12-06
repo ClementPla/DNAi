@@ -1,7 +1,14 @@
 from lightning import LightningModule
 import segmentation_models_pytorch as smp
 from monai.losses.dice import DiceCELoss
-from torchmetrics.classification import Dice, JaccardIndex
+from torchmetrics.classification import JaccardIndex
+
+try:
+    from torchmetrics.classification import Dice
+except ImportError:
+    from torchmetrics.segmentation import DiceScore as Dice
+
+
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from torchmetrics import MetricCollection
@@ -68,17 +75,29 @@ class Trainee(LightningModule, PyTorchModelHubMixin):
             lambda_dice=5.0,
             label_smoothing=0.1,
         )
-        self.metric = MetricCollection(
-            {
-                "dice": Dice(num_classes=num_classes, ignore_index=0),
-                "jaccard": JaccardIndex(
-                    num_classes=num_classes,
-                    task="multiclass" if num_classes > 2 else "binary",
-                    ignore_index=0,
-                ),
-                "detection": DNAFIBERMetric(),
-            }
-        )
+        try:
+            self.metric = MetricCollection(
+                {
+                    "dice": Dice(num_classes=num_classes, ignore_index=0),
+                    "jaccard": JaccardIndex(
+                        num_classes=num_classes,
+                        task="multiclass" if num_classes > 2 else "binary",
+                        ignore_index=0,
+                    ),
+                    "detection": DNAFIBERMetric(),
+                }
+            )
+        except ValueError:
+            self.metric = MetricCollection(
+                {
+                    "dice": Dice(num_classes=num_classes),
+                    "jaccard": JaccardIndex(
+                        num_classes=num_classes,
+                        task="multiclass" if num_classes > 2 else "binary",
+                    ),
+                    "detection": DNAFIBERMetric(),
+                }
+            )
 
         self.weight_decay = weight_decay
         self.learning_rate = learning_rate

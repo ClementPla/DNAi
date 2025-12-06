@@ -1,6 +1,7 @@
 import os
 import streamlit.components.v1 as components
-from dnafiber.data.utils import numpy_to_base64_png
+from dnafiber.data.utils import numpy_to_base64_png, numpy_to_base64_jpeg
+import time
 
 _RELEASE = True
 
@@ -27,7 +28,10 @@ def fiber_ui(image, fibers, key=None):
 
     """
 
-    data_uri = numpy_to_base64_png(image)
+    start = time.time()
+    data_uri = numpy_to_base64_jpeg(image)
+    print("Image encoding time:", time.time() - start)
+    start = time.time()
     component_value = _component_func(
         image=data_uri,
         elements=fibers,
@@ -36,4 +40,5 @@ def fiber_ui(image, fibers, key=None):
         key=key,
         default=[],
     )
+    print("Component call time:", time.time() - start)
     return component_value

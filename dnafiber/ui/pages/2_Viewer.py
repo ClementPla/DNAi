@@ -1,10 +1,10 @@
 import cv2
-import numpy as np
 import streamlit as st
 import torch
 from dnafiber.data.utils import CMAP
 from PIL import Image
 import io
+import time
 
 from dnafiber.deployment import MODELS_ZOO, MODELS_ZOO_R, ENSEMBLE, Models
 from dnafiber.ui.components import (
@@ -120,10 +120,14 @@ def start_inference(
             st.toast(
                 f"Images are displayed at a lower resolution of {max_size} pixel wide"
             )
+        start = time.time()
         rescaled_image, scale = viewer_components(image, prediction, inference_id)
+        print("Viewer components time:", time.time() - start)
+        start = time.time()
         selected_fibers = fiber_ui(
-            rescaled_image, prediction.valid_copy().svgs(scale=scale), key=inference_id
+            rescaled_image, prediction.svgs(scale=scale), key=inference_id
         )
+        print("Fiber UI time:", time.time() - start)
     for fiber in prediction:
         if fiber.fiber_id in selected_fibers:
             fiber.is_an_error = True
@@ -160,8 +164,6 @@ def start_inference(
             )
             if prepare_download:
                 with st.spinner("Preparing files..."):
-                    import time
-
                     start = time.time()
                     labelmap = prediction.filtered_copy().get_labelmap(
                         org_h, org_w, width

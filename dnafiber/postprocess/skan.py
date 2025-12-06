@@ -5,11 +5,14 @@ import itertools
 from numba import njit, int64
 from numba.typed import List
 from numba.types import Tuple
-import math
-from skimage.filters import threshold_otsu
 
 import numba
 
+from numba import njit, prange
+from numba.typed import List
+
+# Define tuple type once at module level
+tuple_type = numba.types.UniTuple(numba.types.int64, 2)
 # Define the element type: a tuple of two int64
 tuple_type = Tuple((int64, int64))
 
@@ -44,78 +47,218 @@ def find_neighbours(fibers_map, point):
     return neighbors
 
 
+@njit(inline="always")
+def get_neighbors_8_inline(y, x, shape_y, shape_x):
+    """Inlined neighbor generation to avoid function call overhead."""
+    neighbors = List.empty_list(tuple_type)
+    for dy in range(-1, 2):
+        for dx in range(-1, 2):
+            if dy == 0 and dx == 0:
+                continue
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < shape_y and 0 <= nx < shape_x:
+                neighbors.append((ny, nx))
+    return neighbors
+
+
+@njit
+def trace_from_point_optimized(skel, point, max_length=25):
+    """Optimized tracing with pre-allocated structures."""
+    y, x = point
+    shape_y, shape_x = skel.shape
+
+    # Early exit
+    if y < 0 or y >= shape_y or x < 0 or x >= shape_x or skel[y, x] != 1:
+        return List.empty_list(tuple_type)
+
+    visited = np.zeros((shape_y, shape_x), dtype=np.uint8)
+    path = List.empty_list(tuple_type)
+
+    # Use a simple array-based stack instead of List for better performance
+    stack_y = np.empty(max_length * 8, dtype=np.int64)
+    stack_x = np.empty(max_length * 8, dtype=np.int64)
+    stack_ptr = 0
+
+    stack_y[0] = y
+    stack_x[0] = x
+    stack_ptr = 1
+
+    while stack_ptr > 0 and len(path) < max_length:
+        stack_ptr -= 1
+        cy = stack_y[stack_ptr]
+        cx = stack_x[stack_ptr]
+
+        if visited[cy, cx]:
+            continue
+        visited[cy, cx] = 1
+        path.append((cy, cx))
+
+        # Inline neighbor iteration
+        for dy in range(-1, 2):
+            for dx in range(-1, 2):
+                if dy == 0 and dx == 0:
+                    continue
+                ny, nx = cy + dy, cx + dx
+                if 0 <= ny < shape_y and 0 <= nx < shape_x:
+                    if skel[ny, nx] == 1 and visited[ny, nx] == 0:
+                        stack_y[stack_ptr] = ny
+                        stack_x[stack_ptr] = nx
+                        stack_ptr += 1
+
+    return path
+
+
+@njit
+def fit_line_simple(points_y, points_x):
+    """
+    Simple linear regression to find line direction.
+    Returns (vx, vy) normalized direction vector.
+    """
+    n = len(points_y)
+    if n < 2:
+        return 1.0, 0.0
+
+    # Compute means
+    mean_x = 0.0
+    mean_y = 0.0
+    for i in range(n):
+        mean_x += points_x[i]
+        mean_y += points_y[i]
+    mean_x /= n
+    mean_y /= n
+
+    # Compute covariance matrix elements
+    cxx = 0.0
+    cyy = 0.0
+    cxy = 0.0
+    for i in range(n):
+        dx = points_x[i] - mean_x
+        dy = points_y[i] - mean_y
+        cxx += dx * dx
+        cyy += dy * dy
+        cxy += dx * dy
+
+    # Principal direction via eigenvalue analysis of 2x2 covariance matrix
+    # For 2x2 symmetric matrix [[cxx, cxy], [cxy, cyy]]
+    # Eigenvector for larger eigenvalue gives principal direction
+
+    diff = cxx - cyy
+    trace = cxx + cyy
+
+    if trace < 1e-10:
+        return 1.0, 0.0
+
+    discriminant = np.sqrt(diff * diff + 4 * cxy * cxy)
+
+    # Eigenvector for larger eigenvalue
+    if abs(cxy) > 1e-10:
+        lambda1 = (trace + discriminant) / 2
+        vx = lambda1 - cyy
+        vy = cxy
+    elif cxx >= cyy:
+        vx = 1.0
+        vy = 0.0
+    else:
+        vx = 0.0
+        vy = 1.0
+
+    # Normalize
+    norm = np.sqrt(vx * vx + vy * vy)
+    if norm > 1e-10:
+        vx /= norm
+        vy /= norm
+
+    return vx, vy
+
+
+@njit(parallel=False)  # Set parallel=True if you have many points
+def compute_points_angle_numba(binary_map, points, steps=25, oriented=False):
+    """
+    Fully JIT-compiled angle computation.
+
+    Args:
+        binary_map: boolean or uint8 array where 1 = fiber
+        points: (N, 2) array of (y, x) coordinates
+        steps: number of pixels to trace
+        oriented: whether to compute oriented angles
+
+    Returns:
+        (N,) array of angles in radians
+    """
+    n_points = len(points)
+    angles = np.zeros(n_points, dtype=np.float32)
+
+    for i in range(n_points):
+        point = (points[i, 0], points[i, 1])
+        path = trace_from_point_optimized(binary_map, point, steps)
+
+        if len(path) < 2:
+            angles[i] = 0.0
+            continue
+
+        # Extract path coordinates
+        path_y = np.empty(len(path), dtype=np.float64)
+        path_x = np.empty(len(path), dtype=np.float64)
+        for j in range(len(path)):
+            path_y[j] = path[j][0]
+            path_x[j] = path[j][1]
+
+        # Fit line
+        vx, vy = fit_line_simple(path_y, path_x)
+
+        if oriented:
+            # Compute mean position
+            mean_x = 0.0
+            for j in range(len(path)):
+                mean_x += path_x[j]
+            mean_x /= len(path)
+
+            angle = np.arctan2(vy, vx)
+            if mean_x > points[i, 1]:
+                angle -= np.pi
+            angles[i] = angle
+        else:
+            angles[i] = np.arctan2(vy, vx)
+
+    return angles
+
+
+# Wrapper to handle input conversion
 def compute_points_angle(fibers_map, points, steps=25, oriented=False):
     """
-    For each endpoint, follow the fiber for a given number of steps and estimate the tangent line by
-    fitting a line to the visited points. The angle of the line is returned.
+    Optimized angle computation using Numba.
     """
-    binary_map = fibers_map > 0
-    points_angle = np.zeros((len(points),), dtype=np.float32)
-    for i, point in enumerate(points):
-        # Find the fiber it belongs to
-        # Lets navigate along the fiber starting from the point during steps pixels.
-        # We compute the angles at each step and return the mean angle.
-        visited = trace_from_point(binary_map, (point[0], point[1]), max_length=steps)
-        visited = np.array(visited)
-        vx, vy, x, y = cv2.fitLine(visited[:, ::-1], cv2.DIST_L2, 0, 0.01, 0.01)
-        # Compute the angle of the line
-        if oriented:
-            # Make sure the the vector points out of the point
-            # We want the vector to point out of the point, so we check the mean position
-            # of the visited points and compare it with the point.
+    binary_map = (fibers_map > 0).astype(np.uint8)
+    points_arr = np.asarray(points, dtype=np.int64)
 
-            # If the mean position is to the right of the point, we invert the x component
-            # If the mean position is below the point, we invert the y component
-            mean_x = np.mean(visited[:, 1])
-            if mean_x > point[1]:
-                points_angle[i] = np.arctan2(vy, vx) - np.pi
-            else:
-                points_angle[i] = np.arctan2(vy, vx)
-        else:
-            points_angle[i] = np.arctan(vy / vx)
+    if points_arr.ndim == 1:
+        points_arr = points_arr.reshape(1, -1)
 
-    return points_angle
+    return compute_points_angle_numba(binary_map, points_arr, steps, oriented)
 
 
 def generate_nonadjacent_combination(input_list, take_n):
-    """
-    It generates combinations of m taken n at a time where there is no adjacent n.
-    INPUT:
-        input_list = (iterable) List of elements you want to extract the combination
-        take_n =     (integer) Number of elements that you are going to take at a time in
-                        each combination
-    OUTPUT:
-        all_comb =   (np.array) with all the combinations
-    """
     all_comb = []
     for comb in itertools.combinations(input_list, take_n):
         comb = np.array(comb)
         d = np.diff(comb)
-        if len(d[d == 1]) == 0 and comb[-1] - comb[0] != 7:
+        # Check no adjacent elements AND no wraparound adjacency (0 and 7)
+        if np.all(d != 1) and not (0 in comb and 7 in comb):
             all_comb.append(comb)
     return all_comb
 
 
 def populate_intersection_kernel(combinations):
-    """
-    Maps the numbers from 0-7 into the 8 pixels surrounding the center pixel in
-    a 9 x 9 matrix clockwisely i.e. up_pixel = 0, right_pixel = 2, etc. And
-    generates a kernel that represents a line intersection, where the center
-    pixel is occupied and 3 or 4 pixels of the border are ocuppied too.
-    INPUT:
-        combinations = (np.array) matrix where every row is a vector of combinations
-    OUTPUT:
-        kernels =      (List) list of 9 x 9 kernels/masks. each element is a mask.
-    """
-    n = len(combinations[0])
-    template = np.array(([-1, -1, -1], [-1, 1, -1], [-1, -1, -1]), dtype="int")
+    template = np.array(([0, 0, 0], [0, 1, 0], [0, 0, 0]), dtype="int")
     match = [(0, 1), (0, 2), (1, 2), (2, 2), (2, 1), (2, 0), (1, 0), (0, 0)]
     kernels = []
-    for n in combinations:
+
+    for comb in combinations:
         tmp = np.copy(template)
-        for m in n:
+        for m in comb:
             tmp[match[m][0], match[m][1]] = 1
         kernels.append(tmp)
+
     return kernels
 
 
@@ -199,7 +342,70 @@ def trace_skeleton(skel):
     if len(endpoints) < 1:
         return List.empty_list(tuple_type)  # Return empty list with proper type
 
-    return trace_from_point(skel, endpoints[0], max_length=skel.sum())
+    return trace_from_point_smooth(skel, endpoints[0], max_length=skel.sum())
+
+
+@njit
+def trace_from_point_smooth(skel, point, max_length=25):
+    """Trace a continuous path, preferring straight-line continuation."""
+    path = List.empty_list(tuple_type)
+
+    y, x = point
+    shape_y, shape_x = skel.shape
+
+    if y < 0 or y >= shape_y or x < 0 or x >= shape_x or skel[y, x] != 1:
+        return path
+
+    visited = np.zeros((shape_y, shape_x), dtype=np.uint8)
+
+    cy, cx = y, x
+    prev_dy, prev_dx = 0, 0  # No previous direction initially
+
+    while len(path) < max_length:
+        visited[cy, cx] = 1
+        path.append((cy, cx))
+
+        # Collect all valid neighbors
+        neighbors_y = np.empty(8, dtype=np.int64)
+        neighbors_x = np.empty(8, dtype=np.int64)
+        neighbors_dy = np.empty(8, dtype=np.int64)
+        neighbors_dx = np.empty(8, dtype=np.int64)
+        n_neighbors = 0
+
+        for dy in range(-1, 2):
+            for dx in range(-1, 2):
+                if dy == 0 and dx == 0:
+                    continue
+                ny, nx = cy + dy, cx + dx
+                if 0 <= ny < shape_y and 0 <= nx < shape_x:
+                    if skel[ny, nx] == 1 and visited[ny, nx] == 0:
+                        neighbors_y[n_neighbors] = ny
+                        neighbors_x[n_neighbors] = nx
+                        neighbors_dy[n_neighbors] = dy
+                        neighbors_dx[n_neighbors] = dx
+                        n_neighbors += 1
+
+        if n_neighbors == 0:
+            break
+
+        # Pick neighbor that best continues the previous direction
+        best_idx = 0
+        if n_neighbors > 1 and (prev_dy != 0 or prev_dx != 0):
+            best_score = -999.0
+            for i in range(n_neighbors):
+                # Dot product with previous direction (higher = more aligned)
+                score = prev_dy * neighbors_dy[i] + prev_dx * neighbors_dx[i]
+                if score > best_score:
+                    best_score = score
+                    best_idx = i
+
+        # Move to best neighbor
+        prev_dy = neighbors_dy[best_idx]
+        prev_dx = neighbors_dx[best_idx]
+        cy = neighbors_y[best_idx]
+        cx = neighbors_x[best_idx]
+
+    return path
 
 
 @njit

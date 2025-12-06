@@ -58,7 +58,7 @@ class BridgeGap(nn.Module):
     def __init__(self, predictive_threshold=1 / 3):
         super().__init__()
         self.kernel = nn.Parameter(
-            torch.ones((5, 5), dtype=torch.float32), requires_grad=False
+            torch.ones((7, 7), dtype=torch.float32), requires_grad=False
         )
         self.predictive_threshold = predictive_threshold
 
@@ -71,6 +71,7 @@ class BridgeGap(nn.Module):
         )
         pos_prob = pos_prob > self.predictive_threshold
         probabilities[:, :1] = ~pos_prob
+        probabilities = probabilities.clamp(min=0.0, max=1.0)
         return probabilities
 
 
@@ -155,7 +156,7 @@ def infer(
         sliding_window = SlidingWindowInferer(
             roi_size=(1024, 1024),
             sw_batch_size=4,
-            overlap=0.25,
+            overlap=0.15,
             mode="gaussian",
             device=device,
             progress=verbose,
@@ -181,4 +182,5 @@ def infer(
             size=(h, w),
             mode="bilinear",
         )
+
     return probabilities
