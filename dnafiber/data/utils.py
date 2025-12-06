@@ -63,7 +63,7 @@ def preprocess(raw_data, reverse_channels=False, bit_depth=16):
         hist, bins = np.histogram(chan.ravel(), MAX_VALUE + 1, (0, MAX_VALUE + 1))
         cdf = hist.cumsum()
         cdf_normalized = cdf / cdf[-1]
-        bmax = np.searchsorted(cdf_normalized, 0.99, side="left")
+        bmax = np.searchsorted(cdf_normalized, 0.975, side="left")
         clip = np.clip(chan, 0, bmax).astype(np.float32)
         clip = (clip - clip.min()) / (bmax - clip.min()) * 255
 
@@ -133,6 +133,35 @@ def numpy_to_base64_png(image_array):
     base64_encoded = base64.b64encode(png_data).decode()
 
     return f"data:image/png;base64,{base64_encoded}"
+
+
+def numpy_to_base64_jpeg(image_array, quality=85):
+    """
+    Encodes a NumPy image array to a base64 string (JPEG format).
+
+    Args:
+        image_array: A NumPy array representing the image.
+        quality: Quality of the JPEG encoding (1-100).
+
+    Returns:
+        A base64 string representing the JPEG image.
+    """
+    # Convert NumPy array to PIL Image
+    image = Image.fromarray(image_array)
+
+    # Create an in-memory binary stream
+    buffer = io.BytesIO()
+
+    # Save the image to the buffer in JPEG format
+    image.save(buffer, format="JPEG", quality=quality)
+
+    # Get the byte data from the buffer
+    jpeg_data = buffer.getvalue()
+
+    # Encode the byte data to base64
+    base64_encoded = base64.b64encode(jpeg_data).decode()
+
+    return f"data:image/jpeg;base64,{base64_encoded}"
 
 
 @st.cache_data

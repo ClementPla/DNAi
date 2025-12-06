@@ -55,6 +55,7 @@ class FiberProps:
     is_an_error: bool = False
     svg_rep: str = None  # SVG representation of the fiber, for visualization purposes
     trace: np.ndarray = None  # Coordinates of the skeletons of the fiber
+    endpoint_correction: float = 0.0  # NEW: pixels to add for endpoint caps
 
     @property
     def bbox(self):
@@ -91,8 +92,17 @@ class FiberProps:
     @property
     def counts(self):
         if self.red_pixels is None or self.green_pixels is None:
-            self.red_pixels = np.sum(self.data == 1)
-            self.green_pixels = np.sum(self.data == 2)
+            red_raw = np.sum(self.data == 1)
+            green_raw = np.sum(self.data == 2)
+
+            self.red_pixels = red_raw
+
+            self.green_pixels = green_raw
+            if red_raw > 0:
+                self.red_pixels += int(self.endpoint_correction)
+            if green_raw > 0:
+                self.green_pixels += int(self.endpoint_correction)
+
         return self.red_pixels, self.green_pixels
 
     @property

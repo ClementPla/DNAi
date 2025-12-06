@@ -84,18 +84,19 @@ def ui_inference_cacheless(
         ).cpu()
 
     with st.spinner("Processing model output..."):
-        start = time.time()
         output = output.cpu().numpy()
         output = np.argmax(output, axis=1).squeeze()
         output = output.astype(np.uint8)
-        if verbose:
-            print("Post-processing time:", time.time() - start)
+
     if verbose:
         print("Segmentation done...")
     if only_segmentation:
         return output
     with st.spinner("Post-processing segmentation..."):
+        start = time.time()
         output = refine_segmentation(
             _image, output, correction_model=correction_model, device=_device
         )
+        if verbose:
+            print("Post-processing time:", time.time() - start)
     return output
