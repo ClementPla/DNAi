@@ -1,0 +1,6 @@
+[global]
+
+# If True, will show a warning when you run a Streamlit-enabled script
+# via "python my_script.py".
+# Default: true
+showWarningOnDirectExecution = false
