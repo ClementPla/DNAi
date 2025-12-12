@@ -315,7 +315,6 @@ def extract_fibers(
     fiberprops = []
     if post_process:
         has_junctions = [len(j) > 0 for j in junctions]
-
         for i, (fiber, coordinate, correction) in enumerate(
             zip(
                 compress(local_fibers, np.logical_not(has_junctions)),
@@ -337,13 +336,18 @@ def extract_fibers(
                     endpoint_correction=correction,
                 )
             )
+
+        if endpoint_corrections:
+            fiber_width = int(np.mean(endpoint_corrections))
+        else:
+            fiber_width = 3
         # Handle fibers with junctions
         try:
             fiberprops += handle_ccs_with_junctions(
                 compress(local_fibers, has_junctions),
                 compress(junctions, has_junctions),
                 compress(coordinates, has_junctions),
-                fiber_width=3 if not endpoint_correction else correction,
+                fiber_width=fiber_width,
             )
         except (IndexError, ValueError):
             # If there is an IndexError, it means that there are no fibers with junctions

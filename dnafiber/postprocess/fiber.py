@@ -410,6 +410,10 @@ class Fibers:
             fibers = pickle.load(f)
         return fibers
 
+    def __add__(self, other: "Fibers") -> "Fibers":
+        combined_fibers = self.fibers + other.fibers
+        return Fibers(combined_fibers)
+
 
 def estimate_fiber_category(fiber_trace: np.ndarray, fiber_data: np.ndarray) -> str:
     """
