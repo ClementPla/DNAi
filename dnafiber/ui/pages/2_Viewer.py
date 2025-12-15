@@ -23,7 +23,7 @@ from dnafiber.ui.utils import (
     get_resized_image,
 )
 from dnafiber.ui import DefaultValues as DV
-from dnafiber.ui.utils import retain_session_state
+from dnafiber.ui.utils import retain_session_state, create_display_files
 
 retain_session_state(st.session_state)
 st.set_page_config(
@@ -207,24 +207,6 @@ def start_inference(
                     file_name="bounding_boxes_map.jpg",
                     mime="image/jpeg",
                 )
-
-
-def create_display_files(files):
-    if files is None or len(files) == 0:
-        return "No files uploaded"
-    display_files = []
-    for file in files:
-        if isinstance(file, tuple):
-            if file[0] is None:
-                name = f"Second analog only {file[1].name}"
-            elif file[1] is None:
-                name = f"First analog only {file[0].name}"
-            else:
-                name = f"{file[0].name} and {file[1].name}"
-            display_files.append(name)
-        else:
-            display_files.append(file.name)
-    return display_files
 
 
 if on_session_start():

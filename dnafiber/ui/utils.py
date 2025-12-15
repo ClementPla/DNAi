@@ -221,3 +221,21 @@ def retain_session_state(ss):
     for var in state_vars:
         if var in ss and not var.startswith("FormSubmitter"):
             ss[var] = ss[var]
+
+
+def create_display_files(files):
+    if files is None or len(files) == 0:
+        return "No files uploaded"
+    display_files = []
+    for file in files:
+        if isinstance(file, tuple):
+            if file[0] is None:
+                name = f"Second analog only {file[1].name}"
+            elif file[1] is None:
+                name = f"First analog only {file[0].name}"
+            else:
+                name = f"{file[0].name} and {file[1].name}"
+            display_files.append(name)
+        else:
+            display_files.append(file.name)
+    return display_files

@@ -3,7 +3,6 @@ from lightning.pytorch.callbacks import (
     ModelCheckpoint,
     EarlyStopping,
     LearningRateMonitor,
-    StochasticWeightAveraging,
 )
 from lightning.pytorch.tuner import Tuner
 from lightning.pytorch.loggers import WandbLogger
@@ -19,10 +18,9 @@ from dnafiber.model.utils import upload_to_hub
 
 
 seed_everything(1234, workers=True)
-torch.set_float32_matmul_precision("high")
 
 
-def train(arch, encoder, use_swa=False):
+def train(arch, encoder):
     c = Config("configs/config.yaml")
     c["model"]["arch"] = arch
     c["model"]["encoder_name"] = encoder
@@ -35,12 +33,12 @@ def train(arch, encoder, use_swa=False):
 
     trainee = traineeClass(**c["training"], **c["model"])
 
-    logger = WandbLogger(project="DeepFiberQ++ V2", config=c.tracked_params)
+    logger = WandbLogger(project="DeepFiberQ++ V3", config=c.tracked_params)
     try:
         run_name = logger.experiment.name
-        path = Path("checkpoints") / "DeepFiberQ++ V2" / run_name
+        path = Path("checkpoints") / "DeepFiberQ++ V3" / run_name
     except TypeError:
-        path = Path("checkpoints") / "DeepFiberQ++ V2" / "default"
+        path = Path("checkpoints") / "DeepFiberQ++ V3" / "default"
 
     callbacks = [
         LearningRateMonitor(),
@@ -59,12 +57,6 @@ def train(arch, encoder, use_swa=False):
         ),
     ]
 
-    if use_swa:
-        callbacks.append(
-            StochasticWeightAveraging(
-                swa_lrs=1e-2,
-            )
-        )
     trainer = Trainer(
         **c["trainer"],
         callbacks=callbacks,
@@ -74,24 +66,24 @@ def train(arch, encoder, use_swa=False):
         strategy=DDPStrategy(find_unused_parameters=True),
     )
 
-    tuner = Tuner(trainer=trainer)
+    # tuner = Tuner(trainer=trainer)
     train_dataloader = datamodule.train_dataloader()
     val_dataloader = datamodule.val_dataloader()
 
-    lr_finder = tuner.lr_find(
-        model=trainee,
-        max_lr=0.05,
-        min_lr=1e-6,
-        train_dataloaders=train_dataloader,
-        val_dataloaders=val_dataloader,
-        early_stop_threshold=None,
-        num_training=50,
-    )
-    new_lr = lr_finder.suggestion()
-    print(f"Suggested learning rate: {new_lr}")
-    c["training"]["learning_rate"] = new_lr
-    trainee.learning_rate = new_lr
-    trainee.hparams.learning_rate = new_lr
+    # lr_finder = tuner.lr_find(
+    #     model=trainee,
+    #     max_lr=0.05,
+    #     min_lr=1e-6,
+    #     train_dataloaders=train_dataloader,
+    #     val_dataloaders=val_dataloader,
+    #     early_stop_threshold=None,
+    #     num_training=50,
+    # )
+    # new_lr = lr_finder.suggestion()
+    # print(f"Suggested learning rate: {new_lr}")
+    # c["training"]["learning_rate"] = new_lr
+    # trainee.learning_rate = new_lr
+    # trainee.hparams.learning_rate = new_lr
     trainer.fit(
         model=trainee,
         train_dataloaders=train_dataloader,

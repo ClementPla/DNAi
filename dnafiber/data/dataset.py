@@ -1,3 +1,4 @@
+from pathlib import Path
 import albumentations as A
 import nntools.dataset as D
 import numpy as np
@@ -10,9 +11,9 @@ from skimage.morphology import skeletonize, dilation
 from skimage.segmentation import expand_labels
 import torch
 from nntools.dataset.composer import CacheBullet
-from skimage.filters import sato
 import cv2
 from timm.data.loader import MultiEpochsDataLoader
+from dnafiber.data.preprocess import preprocess
 
 cv2.setNumThreads(0)
 
@@ -38,8 +39,8 @@ def to_polar_space(image, mask):
 @D.nntools_wrapper
 def convert_mask(mask):
     output = np.zeros(mask.shape[:2], dtype=np.uint8)
-    output[mask[:, :, 0] > 200] = 1
-    output[mask[:, :, 1] > 200] = 2
+    output[mask[:, :, 0] > 150] = 1
+    output[mask[:, :, 1] > 150] = 2
     binary_mask = output > 0
     skeleton = skeletonize(binary_mask) * output
     output = expand_labels(skeleton, 2)
@@ -49,21 +50,9 @@ def convert_mask(mask):
 
 
 @D.nntools_wrapper
-def sato_filter(image):
-    red_channel = image[:, :, 0]
-    green_channel = image[:, :, 1]
-    sigmas = np.arange(1, 2, 0.5)
-    red_channel = sato(red_channel, black_ridges=False, sigmas=sigmas).astype(np.uint8)
-    green_channel = sato(green_channel, black_ridges=False, sigmas=sigmas).astype(
-        np.uint8
-    )
-
-    image = np.stack(
-        [red_channel, green_channel, np.zeros_like(green_channel)], axis=-1
-    )
-    return {
-        "image": image,
-    }
+def preprocess_fn(image):
+    preprocessed = preprocess(image, pixel_size=0.26)
+    return {"image": (preprocessed * 255).astype(np.uint8)}
 
 
 @D.nntools_wrapper
@@ -101,7 +90,6 @@ class FiberDatamodule(LightningDataModule):
         batch_size=32,
         num_workers=8,
         use_bbox=False,
-        sato_filter=False,
         polar_space=False,
         **kwargs,
     ):
@@ -112,7 +100,6 @@ class FiberDatamodule(LightningDataModule):
         self.num_workers = num_workers
         self.kwargs = kwargs
         self.use_bbox = use_bbox
-        self.sato_filter = sato_filter
         self.polar_space = polar_space
 
         super().__init__()
@@ -132,16 +119,17 @@ class FiberDatamodule(LightningDataModule):
             dataset.img_filepath["image"] = np.asarray(  # type: ignore
                 sorted(
                     list(dataset.img_filepath["image"]),
-                    key=lambda x: (x.parent.stem, x.stem),
+                    key=lambda x: (Path(x).parent.stem, Path(x).stem),
                 )
             )
             dataset.img_filepath["mask"] = np.asarray(  # type: ignore
                 sorted(
                     list(dataset.img_filepath["mask"]),
-                    key=lambda x: (x.parent.stem, x.stem),
+                    key=lambda x: (Path(x).parent.stem, Path(x).stem),
                 )
             )
             dataset.composer = D.Composition()
+            dataset.composer << preprocess_fn
             dataset.composer << convert_mask  # type: ignore
             if self.use_bbox:
                 dataset.composer << extract_bbox
@@ -155,15 +143,8 @@ class FiberDatamodule(LightningDataModule):
         self.val.use_cache = False
         self.test.use_cache = False
 
-        stratify = []
-        for f in self.train.img_filepath["mask"]:
-            if "tile" in f.stem:
-                stratify.append(int(f.parent.stem))
-            else:
-                stratify.append(25)
         train_idx, val_idx = train_test_split(
             np.arange(len(self.train)),  # type: ignore
-            stratify=stratify,
             test_size=0.1,
             random_state=42,
         )

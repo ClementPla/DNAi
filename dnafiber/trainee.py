@@ -63,16 +63,12 @@ class Trainee(LightningModule, PyTorchModelHubMixin):
                 **self.model_config,
             )
 
-        # for m in self.model.encoder.modules():
-        #     if isinstance(m, torch.nn.BatchNorm2d):
-        #         m.eval()
-        #         m.requires_grad_(False)
-
+        self.model.compile()
         self.loss = DiceCELoss(
             to_onehot_y=True,
             softmax=True,
-            lambda_ce=5.0,
-            lambda_dice=5.0,
+            lambda_ce=1.0,
+            lambda_dice=1.0,
             label_smoothing=0.1,
         )
         try:
