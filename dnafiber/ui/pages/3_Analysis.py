@@ -1,8 +1,8 @@
 import streamlit as st
 import torch
-from dnafiber.ui.consts import DefaultValues
-from dnafiber.ui.utils import build_file_id, get_multifile_image, get_image_cacheless
-from dnafiber.deployment import MODELS_ZOO, MODELS_ZOO_R, ENSEMBLE, Models
+from dnafiber.ui.utils import build_file_id
+from dnafiber.data.utils import load_image, load_multifile_image
+from dnafiber.model.models_zoo import MODELS_ZOO, MODELS_ZOO_R, ENSEMBLE, Models
 import pandas as pd
 import plotly.express as px
 
@@ -148,14 +148,14 @@ def run_one_file(
             filename = file[1].name
         if file[1] is None:
             filename = file[0].name
-        image = get_multifile_image(
-            file, bit_depth=st.session_state.get("bit_depth", DV.BIT_DEPTH)
+        image = load_multifile_image(
+            file, pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE)
         )
     else:
-        image = get_image_cacheless(
+        image = load_image(
             file,
             st.session_state.get("reverse_channels", DV.REVERSE_CHANNELS),
-            st.session_state.get("bit_depth", DV.BIT_DEPTH),
+            pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
         )
         filename = file.name
     results = ui_inference(
@@ -201,7 +201,6 @@ def run_inference(model_name, use_tta=DV.USE_TTA, use_correction=DV.USE_CORRECTI
             reverse_channels=st.session_state.get(
                 "reverse_channels", DV.REVERSE_CHANNELS
             ),
-            bit_depth=st.session_state.get("bit_depth", DV.BIT_DEPTH),
         )
         prediction_threshold = st.session_state.get(
             "prediction_threshold", DV.PREDICTION_THRESHOLD
@@ -250,14 +249,6 @@ if st.session_state.get("files_uploaded", None):
             step=0.01,
             key="pixel_size",
             help="Pixel size in micrometers",
-        )
-        st.slider(
-            "Bit depth",
-            key="bit_depth",
-            min_value=8,
-            max_value=16,
-            step=1,
-            help="Bit depth of the image",
         )
         st.checkbox(
             "Reverse channels",

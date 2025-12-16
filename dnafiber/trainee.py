@@ -19,6 +19,8 @@ from dnafiber.metric import DNAFIBERMetric
 from skimage.measure import label
 from torch.optim.lr_scheduler import SequentialLR, LinearLR
 
+torch.backends.cudnn.conv.fp32_precision = "tf32"
+
 
 def _convert_activations(module, from_activation, to_activation):
     """Recursively convert activation functions in a module"""
@@ -63,7 +65,7 @@ class Trainee(LightningModule, PyTorchModelHubMixin):
                 **self.model_config,
             )
 
-        self.model.compile()
+        # self.model.compile()
         self.loss = DiceCELoss(
             to_onehot_y=True,
             softmax=True,

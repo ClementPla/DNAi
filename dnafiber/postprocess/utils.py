@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from dnafiber.postprocess.fiber import FiberProps
 
 
-def generate_svg(fiber: FiberProps, scale=1.0) -> str:
+def generate_svg(fiber: FiberProps, scale=1.0, color1="red", color2="green") -> str:
     bbox_data = fiber.bbox.to_dict()
     trace_data = fiber.get_trace()
     offset_x, offset_y = bbox_data["x"], bbox_data["y"]
@@ -36,19 +36,14 @@ def generate_svg(fiber: FiberProps, scale=1.0) -> str:
                     for px, py in current_line
                 )
             )
-            colors.append("red" if current_color == 1 else "green")
+            colors.append(color1 if current_color == 1 else color2)
 
             # Start new line
             current_color = color
             current_line = [(x, y)]
         else:
-            # Same color - add point if far enough from last point (for simplification)
-            # Or always add if you want full resolution
-            dist = (
-                (x - current_line[-1][0]) ** 2 + (y - current_line[-1][1]) ** 2
-            ) ** 0.5
-            if dist > 5 or j == len(data) - 1:
-                current_line.append((x, y))
+            # if dist > 5 or j == len(data) - 1:
+            current_line.append((x, y))
 
     # Don't forget the last segment
     if current_line:
@@ -58,7 +53,7 @@ def generate_svg(fiber: FiberProps, scale=1.0) -> str:
                 for px, py in current_line
             )
         )
-        colors.append("red" if current_color == 1 else "green")
+        colors.append(color1 if current_color == 1 else color2)
 
     bbox_data["points"] = traces_polylines
     bbox_data["colors"] = colors

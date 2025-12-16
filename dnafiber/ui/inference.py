@@ -14,9 +14,9 @@ def ui_inference(
     _model,
     _image,
     _device,
-    _use_tta=True,
-    _use_correction=True,
-    _prediction_threshold=1 / 3,
+    use_tta=True,
+    use_correction=True,
+    prediction_threshold=1 / 3,
     key="default",
 ) -> np.ndarray | Fibers:
     return ui_inference_cacheless(
@@ -24,9 +24,9 @@ def ui_inference(
         _image,
         _device,
         pixel_size=st.session_state.get("pixel_size", 0.13),
-        use_tta=_use_tta,
-        prediction_threshold=_prediction_threshold,
-        use_correction=_use_correction,
+        use_tta=use_tta,
+        prediction_threshold=prediction_threshold,
+        use_correction=use_correction,
     )
 
 
@@ -49,6 +49,7 @@ def ui_inference_cacheless(
     use_correction=None,
     prediction_threshold=1 / 3,
     verbose=True,
+    key=None,
 ) -> np.ndarray | Fibers:
     """
     A cacheless version of the ui_inference function.

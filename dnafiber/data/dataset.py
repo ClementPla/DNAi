@@ -51,8 +51,8 @@ def convert_mask(mask):
 
 @D.nntools_wrapper
 def preprocess_fn(image):
-    preprocessed = preprocess(image, pixel_size=0.26)
-    return {"image": (preprocessed * 255).astype(np.uint8)}
+    preprocessed = preprocess(image, pixel_size=0.26, device="cpu")
+    return {"image": preprocessed.astype(np.uint8)}
 
 
 @D.nntools_wrapper

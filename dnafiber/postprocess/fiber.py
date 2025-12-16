@@ -7,6 +7,9 @@ from dnafiber.postprocess.utils import generate_svg
 import pickle
 import cv2
 from pathlib import Path
+import matplotlib.pyplot as plt
+from dnafiber.data.consts import CMAP
+from scipy.optimize import linear_sum_assignment
 
 
 @attrs.define
@@ -94,14 +97,8 @@ class FiberProps:
         if self.red_pixels is None or self.green_pixels is None:
             red_raw = np.sum(self.data == 1)
             green_raw = np.sum(self.data == 2)
-
             self.red_pixels = red_raw
-
             self.green_pixels = green_raw
-            if red_raw > 0:
-                self.red_pixels += int(self.endpoint_correction)
-            if green_raw > 0:
-                self.green_pixels += int(self.endpoint_correction)
 
         return self.red_pixels, self.green_pixels
 
@@ -139,7 +136,7 @@ class FiberProps:
             # Happens if there is no pixel remaining for this fiber, which indicates it is invalid.
             return False
 
-        return self.is_double or self.is_triple
+        return self.is_double or self.is_triple or self.is_more_than_triple
 
     @property
     def is_acceptable(self):
@@ -152,6 +149,10 @@ class FiberProps:
     @property
     def is_triple(self):
         return self.fiber_type in ["one-two-one", "two-one-two"]
+
+    @property
+    def is_more_than_triple(self):
+        return self.fiber_type == "multiple"
 
     def scaled_coordinates(self, scale: float) -> Tuple[int, int]:
         """
@@ -182,13 +183,57 @@ class FiberProps:
             >= ratio
         )
 
-    def svg_representation(self, scale=1.0):
+    def bbox_iou(self, other) -> float:
+        """
+        Compute the Intersection over Union (IoU) of the bounding boxes of two fibers.
+        """
+        x1, y1, w1, h1 = self.bbox
+        x2, y2, w2, h2 = other.bbox
+
+        intersection_area = max(0, min(x1 + w1, x2 + w2) - max(x1, x2)) * max(
+            0, min(y1 + h1, y2 + h2) - max(y1, y2)
+        )
+        self_area = w1 * h1
+        other_area = w2 * h2
+        union_area = self_area + other_area - intersection_area
+
+        if union_area == 0:
+            return 0.0
+
+        return intersection_area / float(union_area)
+
+    def svg_representation(self, scale=1.0, color1="red", color2="green"):
         try:
-            svg_representation = generate_svg(self, scale=scale)
+            svg_representation = generate_svg(
+                self, scale=scale, color1=color1, color2=color2
+            )
         except Exception as e:
             print(f"Error generating SVG representation: {e}")
             return None
         return svg_representation
+
+    def debug(self, img=None, scale=1.0):
+        fig, ax = plt.subplots(figsize=(8, 8))
+
+        if img is not None:
+            x, y, w, h = self.bbox
+            ax.imshow(img[y : y + h, x : x + w])
+
+        ax.imshow(self.data, cmap=CMAP, vmin=0, vmax=2)
+
+        # Draw the skeleton
+        trace = self.get_trace()
+        if trace.size > 0:
+            ax.plot(
+                trace[:, 1] * scale,
+                trace[:, 0] * scale,
+                color="yellow",
+                linewidth=1,
+            )
+        ax.set_title(
+            f"Fiber ID: {self.fiber_id}, Type: {self.fiber_type}, Red: {self.red}, Green: {self.green}, Ratio: {self.ratio:.2f}"
+        )
+        plt.show()
 
 
 def filter_invalid_bbox(fibers: list[FiberProps]) -> list[FiberProps]:
@@ -347,6 +392,27 @@ class Fibers:
                     result.append_if_not_exists(fiber, ratio=ratio)
         return result
 
+    def matched_pairs(self, other, ratio=0.5) -> list[Tuple[FiberProps, FiberProps]]:
+        n, m = len(self.fibers), len(other.fibers)
+        if n == 0 or m == 0:
+            return []
+
+        # Build IoU matrix (or use negative for cost)
+        iou_matrix = np.zeros((n, m))
+        for i, fiber in enumerate(self.fibers):
+            for j, other_fiber in enumerate(other.fibers):
+                iou_matrix[i, j] = fiber.bbox_iou(other_fiber)
+
+        # Hungarian on negative IoU (minimize cost = maximize IoU)
+        row_ind, col_ind = linear_sum_assignment(-iou_matrix)
+
+        pairs = []
+        for i, j in zip(row_ind, col_ind):
+            if iou_matrix[i, j] >= ratio:  # Only keep pairs above threshold
+                pairs.append((self.fibers[i], other.fibers[j]))
+
+        return pairs
+
     def to_df(
         self, pixel_size=0.13, img_name: Optional[str] = None, filter_invalid=True
     ):
@@ -378,19 +444,25 @@ class Fibers:
             df["Image Name"] = img_name
         return df
 
-    def svgs(self, scale=1.0):
-        svgs = [fiber.svg_representation(scale) for fiber in self.fibers]
+    def svgs(self, scale=1.0, color1="red", color2="green"):
+        svgs = [
+            fiber.svg_representation(scale, color1=color1, color2=color2)
+            for fiber in self.fibers
+        ]
         return [svg for svg in svgs if svg is not None]
 
-    def debug(self, h=1024, w=1024):
-        import matplotlib.pyplot as plt
-        from dnafiber.data.utils import CMAP
+    def debug(self, h=1024, w=1024, img=None, fiber_width=1):
+        if img is not None:
+            h, w = img.shape[:2]
+        labelmap = self.get_labelmap(h, w, fiber_width=fiber_width)
 
-        labelmap = self.get_labelmap(h, w)
+        ratio = np.nanmean(self.ratios)
+        if img is not None:
+            plt.imshow(img)
 
-        ratio = np.mean(self.ratios)
         plt.imshow(labelmap, cmap=CMAP)
         plt.title(f"Fiber Labelmap, {len(self.fibers)} fibers, mean ratio: {ratio:.2f}")
+
         plt.axis("off")
         plt.show()
 

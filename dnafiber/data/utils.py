@@ -4,14 +4,13 @@ import base64
 from xml.dom import minidom
 import cv2
 import numpy as np
-from czifile import CziFile
-from tifffile import imread
 import math
 import streamlit as st
-from matplotlib.colors import ListedColormap
-
-
-CMAP = ListedColormap(["#000000", "#ff0000", "#00ff00"])
+from dnafiber.data.readers import read_img, format_raw_image
+from dnafiber.data.preprocess import preprocess
+from dnafiber.postprocess.core import extract_fibers
+from dnafiber.data.dataset import convert_mask
+from time import time
 
 
 def read_svg(svg_path):
@@ -50,54 +49,6 @@ def extract_bboxes(mask):
         x, y, w, h, area = stats[i]
         bboxes.append([x, y, x + w, y + h])
     return bboxes
-
-
-def preprocess(raw_data, reverse_channels=False, bit_depth=16):
-    MAX_VALUE = (2**bit_depth) - 1
-    if raw_data.ndim == 2:
-        raw_data = raw_data[np.newaxis, :, :]
-    h, w = raw_data.shape[1:3]
-    orders = np.arange(raw_data.shape[0])[::-1]  # Reverse channel order by default
-    result = np.zeros((h, w, 3), dtype=np.uint8)
-    for i, chan in enumerate(raw_data):
-        hist, bins = np.histogram(chan.ravel(), MAX_VALUE + 1, (0, MAX_VALUE + 1))
-        cdf = hist.cumsum()
-        cdf_normalized = cdf / cdf[-1]
-        bmax = np.searchsorted(cdf_normalized, 0.975, side="left")
-        clip = np.clip(chan, 0, bmax).astype(np.float32)
-        clip = (clip - clip.min()) / (bmax - clip.min()) * 255
-
-        clip = clip.astype(np.uint8)
-
-        result[:, :, orders[i]] = clip
-
-    if reverse_channels:
-        # Reverse channels 0 and 1
-        result = result[:, :, [1, 0, 2]]
-
-    result = cv2.bilateralFilter(result, 5, 50, 50)
-
-    return result
-
-
-def read_czi(filepath):
-    with CziFile(filepath) as czi:
-        data = czi.asarray().squeeze()
-    return data
-
-
-def read_tiff(filepath):
-    data = imread(filepath).squeeze()
-    return data
-
-
-def read_dv(filepath):
-    from mrc import DVFile
-
-    with DVFile(filepath) as dv:
-        data = dv.asarray().squeeze()[:2]
-
-    return data
 
 
 def convert_rgb_to_mask(image, threshold=200):
@@ -186,3 +137,65 @@ def pad_image_to_croppable(_image, bx, by, uid=None):
         value=(0, 0, 0),
     )
     return _image
+
+
+def load_image(filepath, reverse_channel, pixel_size=0.13, device="cpu", verbose=False):
+    """
+    A cacheless version of the get_image function.
+    This function does not use caching and is intended for use in scenarios where caching is not desired.
+    """
+    start = time()
+    image = read_img(filepath)
+    if verbose:
+        print(f"Image read in {time() - start:.2f}s")
+    start = time()
+    image = preprocess(image, pixel_size=pixel_size, device=device, verbose=verbose)
+    if verbose:
+        print(f"Image preprocessed in {time() - start:.2f}s")
+    if reverse_channel:
+        # RGB->GRB
+        image = image[:, :, [1, 0, 2]]
+
+    return image
+
+
+def load_multifile_image(_filepaths, pixel_size=0.13, device="cpu"):
+    result = None
+
+    if _filepaths[0] is not None:
+        chan1 = read_img(_filepaths[0])
+        chan1 = cv2.cvtColor(chan1, cv2.COLOR_RGB2GRAY)
+        h, w = chan1.shape[:2]
+    else:
+        chan1 = None
+    if _filepaths[1] is not None:
+        chan2 = read_img(
+            _filepaths[1], False, _filepaths[1].file_id, pixel_size=pixel_size
+        )
+        chan2 = cv2.cvtColor(chan2, cv2.COLOR_RGB2GRAY)
+        h, w = chan2.shape[:2]
+    else:
+        chan2 = None
+
+    result = np.zeros((h, w, 3), dtype=np.uint8)
+
+    if chan1 is not None:
+        result[:, :, 0] = chan1
+    else:
+        result[:, :, 0] = chan2
+
+    if chan2 is not None:
+        result[:, :, 1] = chan2
+    else:
+        result[:, :, 1] = chan1
+
+    result = format_raw_image(result)
+    result = preprocess(result, pixel_size=pixel_size, device=device)
+    return result
+
+
+def mask_filepath_to_fibers(filepath):
+    mask = cv2.imread(str(filepath), cv2.IMREAD_COLOR_RGB)
+    mask = convert_mask(mask=mask)["mask"]
+    fibers = extract_fibers(mask)
+    return fibers

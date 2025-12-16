@@ -1,12 +1,11 @@
-from pyexpat import model
-import PIL.Image
 import streamlit as st
-from dnafiber.data.utils import read_czi, read_tiff, read_dv, preprocess
+
+from dnafiber.data.utils import load_image, load_multifile_image
 import cv2
 import numpy as np
-import PIL
 from dnafiber.ui.consts import DefaultValues as DV
-from dnafiber.trainee import Trainee
+from dnafiber.model.utils import _get_model
+import torch
 
 MAX_WIDTH = 1024
 MAX_HEIGHT = 1024
@@ -26,96 +25,16 @@ def get_model(device, revision=None):
     return _get_model(revision=revision, device=device)
 
 
-def _get_model(revision, device="cuda"):
-    if revision is None:
-        model = Trainee.from_pretrained(
-            "ClementP/DeepFiberQV2", arch="unet", encoder_name="mit_b0"
-        )
-    else:
-        model = Trainee.from_pretrained(
-            "ClementP/DeepFiberQV2",
-            revision=revision,
-            force_download=False,
-        )
-    return model.eval().to(device)
-
-
-def load_image(_filepath):
-    filename = str(_filepath.name)
-    if filename.endswith(".czi"):
-        return read_czi(_filepath)
-    elif filename.endswith(".tif") or filename.endswith(".tiff"):
-        return read_tiff(_filepath)
-    elif filename.endswith(".dv"):
-        return read_dv(_filepath)
-    elif (
-        filename.endswith(".png")
-        or filename.endswith(".jpg")
-        or filename.endswith(".jpeg")
-    ):
-        image = PIL.Image.open(_filepath)
-        image = np.array(image)
-        return image
-    else:
-        raise NotImplementedError(f"File type {filename} is not supported yet")
+@st.cache_data
+def get_image(_filepath, reverse_channel, id, pixel_size=0.13):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    return load_image(_filepath, reverse_channel, pixel_size=pixel_size, device=device)
 
 
 @st.cache_data
-def get_image(_filepath, reverse_channel, id, bit_depth=14):
-    return get_image_cacheless(_filepath, reverse_channel, bit_depth=bit_depth)
-
-
-def get_image_cacheless(filepath, reverse_channel, bit_depth=14):
-    """
-    A cacheless version of the get_image function.
-    This function does not use caching and is intended for use in scenarios where caching is not desired.
-    """
-    filename = str(filepath.name)
-    image = load_image(filepath)
-    if (
-        filename.endswith(".czi")
-        or filename.endswith(".tif")
-        or filename.endswith(".tiff")
-        or filename.endswith(".dv")
-    ):
-        image = preprocess(image, reverse_channel, bit_depth=bit_depth)
-    image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-    return image
-
-
-def get_multifile_image(_filepaths, bit_depth=14):
-    result = None
-
-    if _filepaths[0] is not None:
-        chan1 = get_image(
-            _filepaths[0], False, _filepaths[0].file_id, bit_depth=bit_depth
-        )
-        chan1 = cv2.cvtColor(chan1, cv2.COLOR_RGB2GRAY)
-        h, w = chan1.shape[:2]
-    else:
-        chan1 = None
-    if _filepaths[1] is not None:
-        chan2 = get_image(
-            _filepaths[1], False, _filepaths[1].file_id, bit_depth=bit_depth
-        )
-        chan2 = cv2.cvtColor(chan2, cv2.COLOR_RGB2GRAY)
-        h, w = chan2.shape[:2]
-    else:
-        chan2 = None
-
-    result = np.zeros((h, w, 3), dtype=np.uint8)
-
-    if chan1 is not None:
-        result[:, :, 0] = chan1
-    else:
-        result[:, :, 0] = chan2
-
-    if chan2 is not None:
-        result[:, :, 1] = chan2
-    else:
-        result[:, :, 1] = chan1
-
-    return result
+def get_multifile_image(_filetuple, id, pixel_size=0.13):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    return load_multifile_image(_filetuple, pixel_size=pixel_size, device=device)
 
 
 @st.cache_data
@@ -176,17 +95,14 @@ def build_inference_id(
     return inference_id
 
 
-def build_file_id(file, pixel_size, reverse_channels, bit_depth):
+def build_file_id(file, pixel_size, reverse_channels):
     if isinstance(file, tuple):
         file_id = str(hash(file[0] if file[0] is not None else file[1]))
     else:
         file_id = str(hash(file))
 
     file_id = (
-        file_id
-        + f"_{pixel_size}um"
-        + f"_{'rev' if reverse_channels else 'no_rev'}"
-        + f"_{bit_depth}bit"
+        file_id + f"_{pixel_size}um" + f"_{'rev' if reverse_channels else 'no_rev'}"
     )
     return file_id
 
@@ -194,8 +110,6 @@ def build_file_id(file, pixel_size, reverse_channels, bit_depth):
 def init_session_states():
     if "pixel_size" not in st.session_state:
         st.session_state["pixel_size"] = DV.PIXEL_SIZE
-    if "bit_depth" not in st.session_state:
-        st.session_state["bit_depth"] = DV.BIT_DEPTH
     if "reverse_channels" not in st.session_state:
         st.session_state["reverse_channels"] = DV.REVERSE_CHANNELS
     if "prediction_threshold" not in st.session_state:

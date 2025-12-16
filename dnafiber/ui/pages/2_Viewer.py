@@ -6,7 +6,7 @@ from PIL import Image
 import io
 import time
 
-from dnafiber.deployment import MODELS_ZOO, MODELS_ZOO_R, ENSEMBLE, Models
+from dnafiber.model.models_zoo import MODELS_ZOO, MODELS_ZOO_R, ENSEMBLE, Models
 from dnafiber.ui.components import (
     show_fibers,
     table_components,
@@ -35,7 +35,7 @@ st.markdown(
     """
         <style>
                .block-container {
-                    padding-top: 1rem;
+                    padding-top: 2rem;
                     padding-bottom: 0rem;
                     padding-left: 5rem;
                     padding-right: 5rem;
@@ -102,13 +102,12 @@ def start_inference(
         model,
         image,
         "cuda" if torch.cuda.is_available() else "cpu",
-        use_tta,
-        use_correction,
-        prediction_threshold,
+        use_tta=use_tta,
+        use_correction=use_correction,
+        prediction_threshold=prediction_threshold,
         key=inference_id,
     )
     prediction = prediction.valid_copy()
-
     tab_viewer, tab_fibers, tab_distributions = st.tabs(
         ["Viewer", "Fibers", "Distribution"]
     )
@@ -125,7 +124,13 @@ def start_inference(
         print("Viewer components time:", time.time() - start)
         start = time.time()
         selected_fibers = fiber_ui(
-            rescaled_image, prediction.svgs(scale=scale), key=inference_id
+            rescaled_image,
+            prediction.svgs(
+                scale=scale,
+                color1=st.session_state.get("color1", "red"),
+                color2=st.session_state.get("color2", "green"),
+            ),
+            key=inference_id,
         )
         print("Fiber UI time:", time.time() - start)
     for fiber in prediction:
@@ -210,6 +215,20 @@ def start_inference(
 
 
 if on_session_start():
+    with st.sidebar:
+        st.slider(
+            "Pixel size (µm)",
+            min_value=0.01,
+            max_value=1.0,
+            step=0.01,
+            key="pixel_size",
+            help="Pixel size in micrometers",
+        )
+        st.checkbox(
+            "Reverse channels",
+            key="reverse_channels",
+            help="If the red and green channels are reversed in the image, check this box.",
+        )
     files = st.session_state.files_uploaded
     displayed_names = create_display_files(files)
     with st.sidebar:
@@ -228,7 +247,6 @@ if on_session_start():
         file,
         pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
         reverse_channels=st.session_state.get("reverse_channels", DV.REVERSE_CHANNELS),
-        bit_depth=st.session_state.get("bit_depth", DV.BIT_DEPTH),
     )
     if isinstance(file, tuple):
         if file[0] is None or file[1] is None:
@@ -244,32 +262,10 @@ if on_session_start():
             reverse_channel=st.session_state.get(
                 "reverse_channels", DV.REVERSE_CHANNELS
             ),
-            bit_depth=st.session_state.get("bit_depth", DV.BIT_DEPTH),
             id=file_id,
+            pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
         )
 
-    with st.sidebar:
-        st.slider(
-            "Pixel size (µm)",
-            min_value=0.01,
-            max_value=1.0,
-            step=0.01,
-            key="pixel_size",
-            help="Pixel size in micrometers",
-        )
-        st.slider(
-            "Bit depth",
-            key="bit_depth",
-            min_value=8,
-            max_value=16,
-            step=1,
-            help="Bit depth of the image",
-        )
-        st.checkbox(
-            "Reverse channels",
-            key="reverse_channels",
-            help="If the red and green channels are reversed in the image, check this box.",
-        )
     thumbnail = get_resized_image(image, file_id)
 
     with st.sidebar:

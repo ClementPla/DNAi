@@ -190,14 +190,6 @@ def build_individual_loader(accepted_formats):
 
 cols = st.columns(2)
 with cols[1]:
-    st.write("### Bit depth")
-    if "bit_depth" not in st.session_state:
-        st.session_state["bit_depth"] = DV.BIT_DEPTH
-    st.number_input(
-        f"Please indicate the bit depth of the image (default: {DV.BIT_DEPTH} bits).",
-        key="bit_depth",
-        step=1,
-    )
     st.write("### Pixel size")
 
     st.number_input(

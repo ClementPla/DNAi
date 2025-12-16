@@ -7,19 +7,20 @@ from scipy.ndimage import distance_transform_edt
 from scipy.sparse.csgraph import connected_components
 from scipy.sparse import csr_array
 from skimage.morphology import skeletonize
-from dnafiber.postprocess.skan import find_line_intersection, prolongate_endpoints
+from dnafiber.postprocess.skan import find_line_intersection
 from dnafiber.postprocess.fiber import FiberProps, Bbox, Fibers
 from itertools import compress
-import matplotlib.pyplot as plt
 from matplotlib.colors import ListedColormap
 from dnafiber.postprocess.error_detection import correct_fibers
-from scipy.optimize import linear_sum_assignment
+from scipy.cluster.hierarchy import fcluster, linkage
+import streamlit as st
+import matplotlib.pyplot as plt
 
 cmlabel = ListedColormap(["black", "red", "green"])
 
-MIN_ANGLE = 20
-MIN_BRANCH_LENGTH = 5
-MIN_BRANCH_DISTANCE = 30
+MIN_ANGLE = 45
+MIN_BRANCH_LENGTH = 1
+MIN_BRANCH_DISTANCE = 100
 
 
 def handle_multiple_fiber_in_cc(
@@ -28,193 +29,198 @@ def handle_multiple_fiber_in_cc(
     coordinates,
     fiber_width=3,
     # Cost weights
-    weight_distance=1.0,
+    weight_distance=0.5,
     weight_angle=1.0,
-    weight_color=0.3,
+    weight_color=1.0,
     # Normalization factors
     max_distance=None,
     max_angle_deviation=90.0,
-    # Hard cutoff
-    impossible_cost=1e6,
-    max_allowed_distance=None,
+    junction_cluster_distance=10,
+    debug=True,
 ):
     if max_distance is None:
-        max_distance = fiber_width * 2
-    if max_allowed_distance is None:
-        max_allowed_distance = fiber_width * 2
+        max_distance = fiber_width * 2.5
 
-    # Erase junctions - vectorized
+    # 1. Cluster nearby junctions
+    junctions_fiber = cluster_junctions(
+        junctions_fiber, min_distance=junction_cluster_distance
+    )
+
+    if len(junctions_fiber) == 0:
+        return []
+
+    # 2. Erase all junctions
+    working = fiber.copy()
     for y, x in junctions_fiber:
-        fiber[
-            y - fiber_width : y + fiber_width + 1,
-            x - fiber_width : x + fiber_width + 1,
-        ] = 0
+        cv2.circle(working, (x, y), fiber_width, color=0, thickness=-1)
 
-    endpoints = find_endpoints(fiber > 0)
+    # 3. Label branches
+    num_branches, branches, stats, _ = cv2.connectedComponentsWithStatsWithAlgorithm(
+        (working > 0).astype(np.uint8),
+        connectivity=8,
+        ccltype=cv2.CCL_BOLELLI,
+        ltype=cv2.CV_16U,
+    )
+
+    if num_branches <= 1:
+        return []
+
+    branch_bboxes = stats[
+        :, [cv2.CC_STAT_LEFT, cv2.CC_STAT_TOP, cv2.CC_STAT_WIDTH, cv2.CC_STAT_HEIGHT]
+    ]
+    branch_areas = stats[:, cv2.CC_STAT_AREA]
+
+    valid_branches = np.where(branch_areas >= MIN_BRANCH_LENGTH)[0]
+    valid_branches = valid_branches[valid_branches != 0]
+
+    if len(valid_branches) == 0:
+        return []
+
+    # 4. Find endpoints
+    endpoints = find_endpoints(working > 0)
     endpoints = np.asarray(endpoints)
 
     if len(endpoints) == 0:
         return []
 
-    # Filter endpoints close to junctions
     junctions_arr = np.asarray(junctions_fiber)
     dist_to_junctions = cdist(endpoints, junctions_arr, metric="euclidean")
-    close_to_junction = np.any(dist_to_junctions < fiber_width * 2, axis=1)
-    endpoints = endpoints[close_to_junction]
 
-    if len(endpoints) == 0:
-        return []
+    endpoint_branch = branches[endpoints[:, 0], endpoints[:, 1]]
+    endpoint_color = working[endpoints[:, 0], endpoints[:, 1]]
+    endpoint_angle = compute_points_angle(working, endpoints, steps=15, oriented=True)
 
-    retval, branches, branches_stats, _ = cv2.connectedComponentsWithStatsWithAlgorithm(
-        fiber, connectivity=8, ccltype=cv2.CCL_BOLELLI, ltype=cv2.CV_16U
+    # 5. Build branch adjacency by processing each junction locally
+    adjacency_pairs = []
+    reconnection_lines = []  # (endpoint_i, endpoint_j) for matched pairs
+    endpoint_to_junction = []  # (endpoint_i, junction_idx) for T-junction tips
+
+    for junc_idx in range(len(junctions_fiber)):
+        distances = dist_to_junctions[:, junc_idx]
+        close_mask = distances < fiber_width * 3
+        valid_mask = close_mask & np.isin(endpoint_branch, valid_branches)
+
+        candidate_indices = np.where(valid_mask)[0]
+
+        if len(candidate_indices) < 2:
+            # Single endpoint: it's a T-junction tip, connect to junction
+            if len(candidate_indices) == 1:
+                endpoint_to_junction.append((candidate_indices[0], junc_idx))
+            continue
+
+        # Keep only closest endpoint per branch
+        branches_seen = {}
+        for idx in candidate_indices:
+            br = endpoint_branch[idx]
+            dist = distances[idx]
+            if br not in branches_seen or dist < branches_seen[br][1]:
+                branches_seen[br] = (idx, dist)
+
+        local_indices = np.array([v[0] for v in branches_seen.values()])
+        n = len(local_indices)
+
+        if n < 2 or n > 4:
+            continue
+
+        # Find best pairing
+        pairs = match_junction_endpoints(
+            local_indices,
+            endpoints,
+            endpoint_angle,
+            endpoint_color,
+            weight_distance,
+            weight_angle,
+            weight_color,
+            max_distance,
+            max_angle_deviation,
+        )
+
+        # Track matched endpoints
+        matched = set()
+        for i, j in pairs:
+            bi, bj = endpoint_branch[i], endpoint_branch[j]
+            if bi != bj:
+                adjacency_pairs.append((bi, bj))
+            reconnection_lines.append((i, j))
+            matched.add(i)
+            matched.add(j)
+
+        # T-junction: unmatched endpoints connect to junction center
+        for idx in local_indices:
+            if idx not in matched:
+                endpoint_to_junction.append((idx, junc_idx))
+
+    # 6. Build graph and find connected components
+    branch_to_idx = {b: i for i, b in enumerate(valid_branches)}
+    num_valid = len(valid_branches)
+
+    rows, cols = [], []
+    for i in range(num_valid):
+        rows.append(i)
+        cols.append(i)
+
+    for bi, bj in adjacency_pairs:
+        if bi in branch_to_idx and bj in branch_to_idx:
+            i, j = branch_to_idx[bi], branch_to_idx[bj]
+            rows.extend([i, j])
+            cols.extend([j, i])
+
+    adj_matrix = csr_array(
+        (np.ones(len(rows), dtype=np.uint8), (rows, cols)), shape=(num_valid, num_valid)
     )
-    branches_bboxes = branches_stats[
-        :,
-        [cv2.CC_STAT_LEFT, cv2.CC_STAT_TOP, cv2.CC_STAT_WIDTH, cv2.CC_STAT_HEIGHT],
-    ]
-    branch_areas = branches_stats[:, cv2.CC_STAT_AREA]
 
-    # Vectorized endpoint property lookup
-    endpoint_rows = endpoints[:, 0]
-    endpoint_cols = endpoints[:, 1]
-    endpoints_ids = branches[endpoint_rows, endpoint_cols]
-    endpoints_color = fiber[endpoint_rows, endpoint_cols]
-
-    # Filter small branches - vectorized
-    kept_branches_mask = branch_areas >= MIN_BRANCH_LENGTH
-    kept_branches_mask[0] = False  # Background is never kept
-
-    # Filter endpoints from kept branches
-    remaining_mask = kept_branches_mask[endpoints_ids]
-    if not np.any(remaining_mask):
-        return []
-
-    endpoints = endpoints[remaining_mask]
-    endpoints_color = endpoints_color[remaining_mask]
-    endpoints_ids = endpoints_ids[remaining_mask]
-
-    N = len(endpoints)
-    if N < 2:
-        return []
-
-    # Zero out removed branches in one operation
-    branches[~kept_branches_mask[branches]] = 0
-
-    # === Compute cost components (all vectorized) ===
-
-    # 1. Distance cost
-    dist_matrix = cdist(endpoints, endpoints, metric="euclidean")
-    dist_cost = np.minimum(dist_matrix / max_distance, 1.0)
-
-    # 2. Angle cost
-    angles = compute_points_angle(fiber, endpoints, steps=15, oriented=True)
-    angles_deg = np.rad2deg(angles)
-
-    # Vectorized angle difference
-    diff = np.abs(angles_deg[:, None] - angles_deg[None, :])
-    diff = np.minimum(diff, 360.0 - diff)
-    angle_deviation = np.abs(diff - 180.0)
-    angle_cost = np.minimum(angle_deviation / max_angle_deviation, 1.0)
-
-    # 3. Color cost - vectorized
-    color_cost = (endpoints_color[:, None] != endpoints_color[None, :]).astype(
-        np.float64
+    n_fibers, fiber_labels = connected_components(
+        adj_matrix, directed=False, return_labels=True
     )
 
-    # === Combined cost matrix ===
-    total_cost = (
-        weight_distance * dist_cost
-        + weight_angle * angle_cost
-        + weight_color * color_cost
-    )
-
-    # Mask invalid pairs (diagonal + same branch + too far)
-    invalid_mask = (
-        (np.arange(N)[:, None] == np.arange(N)[None, :])  # diagonal
-        | (endpoints_ids[:, None] == endpoints_ids[None, :])  # same branch
-        | (dist_matrix > max_allowed_distance)  # too far
-    )
-    total_cost[invalid_mask] = impossible_cost
-
-    # === Hungarian algorithm ===
-    row_ind, col_ind = linear_sum_assignment(total_cost)
-
-    # Filter invalid matches
-    valid = total_cost[row_ind, col_ind] < impossible_cost
-    row_ind = row_ind[valid]
-    col_ind = col_ind[valid]
-
-    # === Build adjacency with sparse matrix directly ===
-    # Edges: diagonal + same-branch + matched pairs
-    rows = []
-    cols = []
-
-    # Diagonal (self-loops)
-    rows.extend(range(N))
-    cols.extend(range(N))
-
-    # Same branch connections
-    for branch_id in np.unique(endpoints_ids):
-        idxs = np.where(endpoints_ids == branch_id)[0]
-        if len(idxs) > 1:
-            for i in idxs:
-                for j in idxs:
-                    rows.append(i)
-                    cols.append(j)
-
-    # Matched pairs
-    for i, j in zip(row_ind, col_ind):
-        rows.extend([i, j])
-        cols.extend([j, i])
-
-    A = csr_array((np.ones(len(rows), dtype=np.uint8), (rows, cols)), shape=(N, N))
-
-    n_components, ccs = connected_components(A, directed=False, return_labels=True)
-
-    # Build edge lookup for drawing
-    added_edges = {}
-    for i, j in zip(row_ind, col_ind):
-        added_edges[i] = j
-        added_edges[j] = i
-
-    # === Build results - optimized ===
+    # 7. Build FiberProps for each fiber
     results = []
-    unique_clusters = np.unique(ccs)
 
-    for c in unique_clusters:
-        idx = np.where(ccs == c)[0]
-        branches_ids_cluster = np.unique(endpoints_ids[idx])
+    for fiber_id in range(n_fibers):
+        branch_indices = np.where(fiber_labels == fiber_id)[0]
+        fiber_branch_ids = valid_branches[branch_indices]
 
-        # Compute bounding box
-        bboxes = branches_bboxes[branches_ids_cluster]
+        # Start with branch bounding boxes
+        bboxes = branch_bboxes[fiber_branch_ids]
         min_x = np.min(bboxes[:, 0])
         min_y = np.min(bboxes[:, 1])
         max_x = np.max(bboxes[:, 0] + bboxes[:, 2])
         max_y = np.max(bboxes[:, 1] + bboxes[:, 3])
 
-        # Create branch mask efficiently
-        branch_mask = np.isin(branches[min_y:max_y, min_x:max_x], branches_ids_cluster)
-        new_fiber = branch_mask * fiber[min_y:max_y, min_x:max_x]
+        # Expand bbox to include junction centers for T-junctions in this fiber
+        for ep_idx, junc_idx in endpoint_to_junction:
+            if endpoint_branch[ep_idx] in fiber_branch_ids:
+                jy, jx = junctions_arr[junc_idx]
+                min_x = min(min_x, jx)
+                min_y = min(min_y, jy)
+                max_x = max(max_x, jx + 1)
+                max_y = max(max_y, jy + 1)
 
-        # Draw connecting lines
-        for cidx in idx:
-            if cidx not in added_edges:
-                continue
-            other = added_edges[cidx]
-            if cidx > other:  # Draw each edge only once
-                continue
+        branch_mask = np.isin(branches[min_y:max_y, min_x:max_x], fiber_branch_ids)
+        new_fiber = branch_mask * working[min_y:max_y, min_x:max_x]
 
-            pointA = (endpoints[cidx, 1] - min_x, endpoints[cidx, 0] - min_y)
-            pointB = (endpoints[other, 1] - min_x, endpoints[other, 0] - min_y)
-            colA, colB = endpoints_color[cidx], endpoints_color[other]
+        # Draw lines between matched endpoints
+        for i, j in reconnection_lines:
+            bi, bj = endpoint_branch[i], endpoint_branch[j]
+            if bi in fiber_branch_ids or bj in fiber_branch_ids:
+                pt1 = (endpoints[i, 1] - min_x, endpoints[i, 0] - min_y)
+                pt2 = (endpoints[j, 1] - min_x, endpoints[j, 0] - min_y)
+                col_i, col_j = endpoint_color[i], endpoint_color[j]
+                color = 2 if col_i != col_j else int(col_i)
+                new_fiber = cv2.line(new_fiber, pt1, pt2, color=color, thickness=1)
 
-            new_fiber = cv2.line(
-                new_fiber,
-                pointA,
-                pointB,
-                color=2 if colA != colB else int(colA),
-                thickness=1,
-            )
+        # Draw lines from T-junction tips to junction center
+        for ep_idx, junc_idx in endpoint_to_junction:
+            if endpoint_branch[ep_idx] in fiber_branch_ids:
+                pt_ep = (endpoints[ep_idx, 1] - min_x, endpoints[ep_idx, 0] - min_y)
+                pt_junc = (
+                    junctions_arr[junc_idx, 1] - min_x,
+                    junctions_arr[junc_idx, 0] - min_y,
+                )
+                color = int(endpoint_color[ep_idx])
+                new_fiber = cv2.line(
+                    new_fiber, pt_ep, pt_junc, color=color, thickness=1
+                )
 
         bbox = Bbox(
             x=coordinates[0] + min_x,
@@ -225,6 +231,86 @@ def handle_multiple_fiber_in_cc(
         results.append(FiberProps(bbox=bbox, data=new_fiber))
 
     return results
+
+
+def cluster_junctions(junctions, min_distance=10):
+    """Merge junctions that are too close together."""
+    if len(junctions) <= 1:
+        return np.asarray(junctions)
+
+    junctions = np.asarray(junctions)
+
+    Z = linkage(junctions, method="single")
+    labels = fcluster(Z, t=min_distance, criterion="distance")
+
+    clustered = []
+    for label in np.unique(labels):
+        mask = labels == label
+        centroid = junctions[mask].mean(axis=0).astype(int)
+        clustered.append(centroid)
+
+    return np.array(clustered)
+
+
+def match_junction_endpoints(
+    local_indices,
+    endpoints,
+    angles,
+    colors,
+    weight_distance,
+    weight_angle,
+    weight_color,
+    max_distance,
+    max_angle_deviation,
+):
+    """Match endpoints at a single junction. Returns list of (global_idx_i, global_idx_j) pairs."""
+    n = len(local_indices)
+
+    def pair_cost(i, j):
+        gi, gj = local_indices[i], local_indices[j]
+
+        # Distance
+        dist = np.linalg.norm(endpoints[gi] - endpoints[gj])
+        dist_cost = min(dist / max_distance, 1.0)
+
+        # Angle: good match = ~180° apart
+        angle_diff = np.abs(np.rad2deg(angles[gi] - angles[gj]))
+        angle_diff = min(angle_diff, 360 - angle_diff)
+        angle_deviation = np.abs(angle_diff - 180)
+        angle_cost = min(angle_deviation / max_angle_deviation, 1.0)
+
+        # Color
+        color_cost = 0.0 if colors[gi] == colors[gj] else 1.0
+
+        return (
+            weight_distance * dist_cost
+            + weight_angle * angle_cost
+            + weight_color * color_cost
+        )
+
+    if n == 2:
+        return [(local_indices[0], local_indices[1])]
+
+    elif n == 3:
+        # T-junction: find best single pair
+        candidates = [(0, 1), (0, 2), (1, 2)]
+        best = min(candidates, key=lambda p: pair_cost(p[0], p[1]))
+        return [(local_indices[best[0]], local_indices[best[1]])]
+
+    elif n == 4:
+        # Crossing: find best pairing (2 pairs)
+        candidates = [
+            [(0, 1), (2, 3)],
+            [(0, 2), (1, 3)],
+            [(0, 3), (1, 2)],
+        ]
+        best = min(candidates, key=lambda ps: pair_cost(*ps[0]) + pair_cost(*ps[1]))
+        return [
+            (local_indices[best[0][0]], local_indices[best[0][1]]),
+            (local_indices[best[1][0]], local_indices[best[1][1]]),
+        ]
+
+    return []
 
 
 def handle_ccs_with_junctions(
@@ -250,7 +336,6 @@ def handle_ccs_with_junctions(
 
 def extract_fibers(
     mask,
-    post_process=True,
     x_offset: int = 0,
     y_offset: int = 0,
     endpoint_correction: bool = True,
@@ -291,19 +376,16 @@ def extract_fibers(
 
         # Calculate endpoint correction
         correction = 0
-        if local_label.any():
-            # Find endpoints in local coordinates
-            local_skel = (local_binary_fiber > 0).astype(np.uint8)
-            endpoints = find_endpoints(local_skel)
+        # Find endpoints in local coordinates
+        endpoints = find_endpoints(local_binary_fiber)
+        if endpoint_correction:
+            # Compute the average distance at endpoints
+            distances = []
+            for y, x in endpoints:
+                distances.append(2 * dist_transform[y, x])
 
-            if len(endpoints) > 0 and endpoint_correction:
-                # Compute the average distance at endpoints
-                distances = []
-                for y, x in endpoints:
-                    distances.append(2 * dist_transform[y, x])
-
-                if len(distances) > 0:
-                    correction = int(np.mean(distances))
+            if distances:
+                correction = int(np.mean(distances))
 
         endpoint_corrections.append(correction)
 
@@ -313,58 +395,44 @@ def extract_fibers(
         junctions.append(local_junctions)
 
     fiberprops = []
-    if post_process:
-        has_junctions = [len(j) > 0 for j in junctions]
-        for i, (fiber, coordinate, correction) in enumerate(
-            zip(
-                compress(local_fibers, np.logical_not(has_junctions)),
-                compress(coordinates, np.logical_not(has_junctions)),
-                compress(endpoint_corrections, np.logical_not(has_junctions)),
+    has_junctions = [len(j) > 0 for j in junctions]
+    for i, (fiber, coordinate, correction) in enumerate(
+        zip(
+            compress(local_fibers, np.logical_not(has_junctions)),
+            compress(coordinates, np.logical_not(has_junctions)),
+            compress(endpoint_corrections, np.logical_not(has_junctions)),
+        )
+    ):
+        bbox = Bbox(
+            x=coordinate[0],
+            y=coordinate[1],
+            width=coordinate[2],
+            height=coordinate[3],
+        )
+        fiberprops.append(
+            FiberProps(
+                bbox=bbox,
+                data=fiber,
+                fiber_id=i,
+                endpoint_correction=correction,
             )
-        ):
-            bbox = Bbox(
-                x=coordinate[0],
-                y=coordinate[1],
-                width=coordinate[2],
-                height=coordinate[3],
-            )
-            fiberprops.append(
-                FiberProps(
-                    bbox=bbox,
-                    data=fiber,
-                    fiber_id=i,
-                    endpoint_correction=correction,
-                )
-            )
+        )
 
-        if endpoint_corrections:
-            fiber_width = int(np.mean(endpoint_corrections))
-        else:
-            fiber_width = 3
-        # Handle fibers with junctions
-        try:
-            fiberprops += handle_ccs_with_junctions(
-                compress(local_fibers, has_junctions),
-                compress(junctions, has_junctions),
-                compress(coordinates, has_junctions),
-                fiber_width=fiber_width,
-            )
-        except (IndexError, ValueError):
-            # If there is an IndexError, it means that there are no fibers with junctions
-            pass
+    if endpoint_corrections:
+        fiber_width = int(np.mean(endpoint_corrections))
     else:
-        for i, (fiber, coordinate, correction) in enumerate(
-            zip(local_fibers, coordinates, endpoint_corrections)
-        ):
-            bbox = Bbox(
-                x=coordinate[0],
-                y=coordinate[1],
-                width=coordinate[2],
-                height=coordinate[3],
-            )
-            fiberprops.append(
-                FiberProps(bbox=bbox, data=fiber, endpoint_correction=correction)
-            )
+        fiber_width = 3
+    # Handle fibers with junctions
+    try:
+        fiberprops += handle_ccs_with_junctions(
+            compress(local_fibers, has_junctions),
+            compress(junctions, has_junctions),
+            compress(coordinates, has_junctions),
+            fiber_width=fiber_width,
+        )
+    except (IndexError, ValueError):
+        # If there is an IndexError, it means that there are no fibers with junctions
+        pass
 
     for fiber in fiberprops:
         fiber.bbox.x += x_offset
@@ -384,7 +452,6 @@ def refine_segmentation(
 ):
     fibers = extract_fibers(
         segmentation,
-        post_process=True,
         x_offset=x_offset,
         y_offset=y_offset,
     )
