@@ -2,7 +2,7 @@
 checkpoints/
 inspect/
 wandb/
-data/
+/data/
 output/
 dnafiber/ui/custom/fiber_ui/frontend/node_modules
 /node_modules/
