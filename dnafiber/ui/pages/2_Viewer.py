@@ -1,7 +1,7 @@
 import cv2
 import streamlit as st
 import torch
-from dnafiber.data.utils import CMAP
+from dnafiber.data.consts import CMAP
 from PIL import Image
 import io
 import time
