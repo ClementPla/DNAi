@@ -93,6 +93,37 @@ class EnsembleModel(nn.Module):
         return torch.stack(weighted_outputs).sum(dim=0)
 
 
+class SafeTTAWrapper(nn.Module):
+    def __init__(self, model, transforms, merge_mode="mean"):
+        super().__init__()
+        self.model = model
+        self.transforms = transforms
+        self.merge_mode = merge_mode
+
+    def forward(self, x):
+        h, w = x.shape[2], x.shape[3]
+        outputs = []
+
+        for transformer in self.transforms:
+            augmented = transformer.augment_image(x)
+            pred = self.model(augmented)
+            deaugmented = transformer.deaugment_mask(pred)
+
+            # Force consistent size after de-augmentation
+            if deaugmented.shape[2] != h or deaugmented.shape[3] != w:
+                deaugmented = F.interpolate(deaugmented, size=(h, w), mode="bilinear")
+
+            outputs.append(deaugmented)
+
+        stacked = torch.stack(outputs)
+        if self.merge_mode == "mean":
+            return stacked.mean(dim=0)
+        elif self.merge_mode == "tsharpen":
+            return (stacked**0.5).mean(dim=0)
+        else:
+            return stacked.mean(dim=0)
+
+
 class Inferer(nn.Module):
     def __init__(
         self,
@@ -121,9 +152,7 @@ class Inferer(nn.Module):
                     tta.Scale(scales=[1, 0.75, 1.25]),
                 ]
             )
-            self.model = tta.SegmentationTTAWrapper(
-                self.model, transforms, merge_mode="tsharpen"
-            )
+            self.model = SafeTTAWrapper(self.model, transforms, merge_mode="tsharpen")
 
     def forward(self, image):
         if self.sliding_window_inferer is not None:

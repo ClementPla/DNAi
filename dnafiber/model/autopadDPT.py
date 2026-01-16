@@ -1,5 +1,4 @@
 import torch.nn as nn
-import streamlit as st
 
 
 class AutoPad(nn.Module):
@@ -9,7 +8,6 @@ class AutoPad(nn.Module):
         self.divisible_by = divisible_by
 
     def forward(self, x):
-        st.write(x.shape)
         height, width = x.shape[2], x.shape[3]
         pad_h = (-height) % self.divisible_by
         pad_w = (-width) % self.divisible_by
@@ -22,7 +20,6 @@ class AutoPad(nn.Module):
         if pad_h > 0 or pad_w > 0:
             x = x[:, :, :height, :width]
 
-        st.write(x.shape)
         return x
 
     def __repr__(self):
