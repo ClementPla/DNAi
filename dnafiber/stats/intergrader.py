@@ -8,12 +8,13 @@ from tqdm.auto import tqdm
 from copy import deepcopy
 import pandas as pd
 from dnafiber.postprocess import refine_segmentation
-from dnafiber.inference import infer, transform, _get_model
+from dnafiber.inference import run_model, transform, _get_model
 from dnafiber.ui.utils import get_image_cacheless
-from dnafiber.ui.inference import ui_inference_cacheless
+from dnafiber.ui.inference import inference
 import torch
 from tqdm.contrib.concurrent import process_map, thread_map
 from functools import partial
+
 
 class FiberExtractor:
     def expand_bbox(self, factor=0.1):
@@ -21,7 +22,7 @@ class FiberExtractor:
         for k, list_fibers in self.fibers.items():
             for fiber in list_fibers:
                 bbox = fiber.fiber.bbox
-                x,  y = bbox.x, bbox.y
+                x, y = bbox.x, bbox.y
                 width, height = bbox.width, bbox.height
                 new_width = int(width * (1 + factor))
                 new_height = int(height * (1 + factor))
@@ -32,7 +33,8 @@ class FiberExtractor:
                 bbox.width = new_width
                 bbox.height = new_height
                 fiber.fiber.bbox = bbox
-       
+
+
 class AIGrader(FiberExtractor):
     def __init__(self, folder, ai_name):
         folder = Path(folder)
@@ -72,9 +74,7 @@ class AIGrader(FiberExtractor):
         all_predictions = []
         for batch in tqdm(all_images, desc="Processing batches"):
             predictions = None
-            batch = batch.to(
-                device="cuda" if torch.cuda.is_available() else "cpu"
-            )
+            batch = batch.to(device="cuda" if torch.cuda.is_available() else "cpu")
             for m in model:
                 m = _get_model(
                     device="cuda" if torch.cuda.is_available() else "cpu", revision=m
@@ -98,10 +98,21 @@ class AIGrader(FiberExtractor):
         predictions = np.concatenate(all_predictions, axis=0).squeeze()
 
         predictions = [p for p in predictions]
-        images = [get_image_cacheless(f, reverse_channel=False, id=None) for f in self.annotations_filepaths]
+        images = [
+            get_image_cacheless(f, reverse_channel=False, id=None)
+            for f in self.annotations_filepaths
+        ]
 
-        partial_refine_segmentation = partial(refine_segmentation, post_process=post_process, threshold=5)
-        fibers = thread_map(partial_refine_segmentation, images, predictions, desc="Refining fibers", max_workers=2)
+        partial_refine_segmentation = partial(
+            refine_segmentation, post_process=post_process, threshold=5
+        )
+        fibers = thread_map(
+            partial_refine_segmentation,
+            images,
+            predictions,
+            desc="Refining fibers",
+            max_workers=2,
+        )
 
         for name, fiber in zip(self.names, fibers):
             if fiber is not None:
@@ -133,7 +144,9 @@ class GraderData(FiberExtractor):
         for name, skeleton in tqdm(
             zip(self.names, self.skeletons), desc="Extracting fibers"
         ):
-            fibers = extract_fibers((skeleton>0).astype(np.uint8), skeleton, post_process=True)
+            fibers = extract_fibers(
+                (skeleton > 0).astype(np.uint8), skeleton, post_process=True
+            )
             self.fibers[name] = fibers
 
 
@@ -284,6 +297,7 @@ def format_unions_fibers(graders):
 
     return pd.DataFrame(result)
 
+
 def get_green_red_and_ratio_fibers(grader1, grader2):
     """
     Find common fibers across all graders and compute the green length, red length and ratio of fibers found by each grader.
@@ -315,7 +329,7 @@ def get_green_red_and_ratio_fibers(grader1, grader2):
             for f2 in fibers2:
                 if get_bbox_IoU(f1, f2) < 0.5:
                     continue
-                
+
                 result[f"{grader1.grader_name}_green"].append(f1.green)
                 result[f"{grader1.grader_name}_red"].append(f1.red)
                 result[f"{grader1.grader_name}_ratio"].append(f1.ratio)
@@ -324,8 +338,8 @@ def get_green_red_and_ratio_fibers(grader1, grader2):
                 result[f"{grader2.grader_name}_green"].append(f2.green)
                 result[f"{grader2.grader_name}_red"].append(f2.red)
 
-
     return pd.DataFrame(result)
+
 
 def assess_detection_fibers(grader: AIGrader, reference: GraderData, IoU_threshold=0.5):
     names = list(set(grader.names) | set(reference.names))
@@ -335,7 +349,7 @@ def assess_detection_fibers(grader: AIGrader, reference: GraderData, IoU_thresho
     for name in tqdm(names, desc="Assessing detection fibers"):
         if name not in grader.fibers or name not in reference.fibers:
             continue
-        
+
         TP = 0
         P = 0
         FP = 0
@@ -344,14 +358,14 @@ def assess_detection_fibers(grader: AIGrader, reference: GraderData, IoU_thresho
         fibers2 = reference.fibers[name]
         PredP = len(fibers1)
         P = len(fibers2)
-        already_found_f1 =  np.zeros(len(fibers1), dtype=bool)
-        already_found_f2= np.zeros(len(fibers2), dtype=bool)
+        already_found_f1 = np.zeros(len(fibers1), dtype=bool)
+        already_found_f2 = np.zeros(len(fibers2), dtype=bool)
         for i, f1 in enumerate(fibers1):
             for j, f2 in enumerate(fibers2):
                 if already_found_f2[j] or already_found_f1[i]:
                     continue
                 iou = get_bbox_IoU(f1, f2)
-                
+
                 if iou > IoU_threshold:
                     already_found_f1[i] = True
                     already_found_f2[j] = True
@@ -359,13 +373,13 @@ def assess_detection_fibers(grader: AIGrader, reference: GraderData, IoU_thresho
                     TP += 1
                 else:
                     FP += 1
-        
+
         precision.append(TP / PredP if PredP > 0 else 0)
         recall.append(TP / P if P > 0 else 0)
         IoUs.append(np.mean(IoU) if IoU else 0)
-                
-    return {"precision": np.array(precision).squeeze(),
-            "recall": np.array(recall).squeeze(),
-            "IoU":  np.array(IoUs).squeeze()}
-                    
 
+    return {
+        "precision": np.array(precision).squeeze(),
+        "recall": np.array(recall).squeeze(),
+        "IoU": np.array(IoUs).squeeze(),
+    }

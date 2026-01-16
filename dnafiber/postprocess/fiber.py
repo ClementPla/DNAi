@@ -384,6 +384,14 @@ class Fibers:
                     intersection.append_if_not_exists(fiber, ratio)
         return intersection
 
+    def joined_intersection(self, other, ratio=0.5):
+        intersection = []
+        for fiber in self.fibers:
+            for other_fiber in other.fibers:
+                if fiber.bbox_intersect(other_fiber, ratio):
+                    (intersection.append((fiber, other_fiber)))
+        return intersection
+
     def order_as(self, other, ratio=0.5):
         result = Fibers([])
         for i, other_fiber in enumerate(other.fibers):
@@ -485,6 +493,9 @@ class Fibers:
     def __add__(self, other: "Fibers") -> "Fibers":
         combined_fibers = self.fibers + other.fibers
         return Fibers(combined_fibers)
+
+    def __reduce__(self):
+        return (self.__class__, (self.fibers, self.path))
 
 
 def estimate_fiber_category(fiber_trace: np.ndarray, fiber_data: np.ndarray) -> str:

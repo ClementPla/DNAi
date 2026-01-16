@@ -9,7 +9,7 @@ import torch
 from dnafiber.postprocess import refine_segmentation
 
 from dnafiber.postprocess.fiber import Fibers
-from dnafiber.ui.inference import ui_inference_cacheless
+from dnafiber.ui.inference import inference
 from dnafiber.data.utils import numpy_to_base64_png
 from dnafiber.data.utils import load_image, load_multifile_image
 from dnafiber.postprocess.error_detection import load_model
@@ -54,11 +54,11 @@ def run_one_file(
     if verbose:
         print(f"Image loading time: {time.time() - start:.2f} seconds for {filename}")
     start = time.time()
-    prediction = ui_inference_cacheless(
-        _model=model,
-        _image=image,
+    prediction = inference(
+        model=model,
+        image=image,
         pixel_size=pixel_size,
-        _device="cuda" if is_cuda_available else "cpu",
+        device="cuda" if is_cuda_available else "cpu",
         use_tta=use_tta,
         use_correction=use_correction,
         only_segmentation=True,

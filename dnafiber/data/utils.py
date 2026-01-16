@@ -149,7 +149,7 @@ def load_image(filepath, reverse_channel, pixel_size=0.13, device="cpu", verbose
     if verbose:
         print(f"Image read in {time() - start:.2f}s")
     start = time()
-    image = preprocess(image, pixel_size=pixel_size, device=device, verbose=verbose)
+    image = preprocess(image, pixel_size=pixel_size, verbose=verbose)
     if verbose:
         print(f"Image preprocessed in {time() - start:.2f}s")
     if reverse_channel:
@@ -194,8 +194,10 @@ def load_multifile_image(_filepaths, pixel_size=0.13, device="cpu"):
     return result
 
 
-def mask_filepath_to_fibers(filepath):
+def mask_filepath_to_fibers(filepath, RGB2GRB=False):
     mask = cv2.imread(str(filepath), cv2.IMREAD_COLOR_RGB)
+    if RGB2GRB:
+        mask = mask[:, :, [1, 0, 2]]
     mask = convert_mask(mask=mask)["mask"]
     fibers = extract_fibers(mask)
     return fibers

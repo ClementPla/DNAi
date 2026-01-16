@@ -1,5 +1,5 @@
 import streamlit as st
-from dnafiber.inference import infer
+from dnafiber.inference import run_model
 from dnafiber.postprocess.core import refine_segmentation
 import numpy as np
 from dnafiber.ui.utils import _get_model
@@ -19,7 +19,7 @@ def ui_inference(
     prediction_threshold=1 / 3,
     key="default",
 ) -> np.ndarray | Fibers:
-    return ui_inference_cacheless(
+    return inference(
         _model,
         _image,
         _device,
@@ -39,17 +39,16 @@ def get_model(model_name):
     return model
 
 
-def ui_inference_cacheless(
-    _model,
-    _image,
-    _device,
+def inference(
+    model,
+    image,
+    device,
     pixel_size,
     use_tta=True,
     only_segmentation=False,
     use_correction=None,
     prediction_threshold=1 / 3,
     verbose=True,
-    key=None,
 ) -> np.ndarray | Fibers:
     """
     A cacheless version of the ui_inference function.
@@ -59,25 +58,26 @@ def ui_inference_cacheless(
         correction_model = load_model()
     else:
         correction_model = None
-    h, w = _image.shape[:2]
-    model = []
-    if isinstance(_model, list):
-        for m in _model:
+    h, w = image.shape[:2]
+
+    formatted_model = []
+    if isinstance(model, list):
+        for m in model:
             if isinstance(m, str):
-                model.append(get_model(m))
+                formatted_model.append(get_model(m))
             else:
-                model.append(m)
+                formatted_model.append(m)
     else:
-        if isinstance(_model, str):
-            model = [get_model(_model)]
+        if isinstance(model, str):
+            formatted_model = [get_model(model)]
         else:
-            model = [_model]
+            formatted_model = [model]
 
     with torch.inference_mode():
-        output = infer(
-            model,
-            image=_image,
-            device=_device,
+        output = run_model(
+            formatted_model,
+            image=image,
+            device=device,
             scale=pixel_size,
             use_tta=use_tta,
             verbose=verbose,
@@ -96,7 +96,7 @@ def ui_inference_cacheless(
     with st.spinner("Post-processing segmentation..."):
         start = time.time()
         output = refine_segmentation(
-            _image, output, correction_model=correction_model, device=_device
+            image, output, correction_model=correction_model, device=device
         )
         if verbose:
             print("Post-processing time:", time.time() - start)

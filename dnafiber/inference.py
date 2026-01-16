@@ -134,7 +134,7 @@ class Inferer(nn.Module):
 
 
 @torch.inference_mode()
-def infer(
+def run_model(
     model,
     image,
     device,

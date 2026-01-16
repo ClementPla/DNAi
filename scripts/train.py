@@ -28,10 +28,9 @@ def train(arch, encoder):
         c["model"]["dynamic_img_size"] = True
 
     datamodule = FiberDatamodule(**c["data"], use_bbox=arch == "maskrcnn")
-    traineeClass = TraineeMaskRCNN if arch == "maskrcnn" else Trainee
     datamodule.setup()
 
-    trainee = traineeClass(**c["training"], **c["model"])
+    trainee = Trainee(**c["training"], **c["model"])
 
     logger = WandbLogger(project="DeepFiberQ++ V3", config=c.tracked_params)
     try:
@@ -99,7 +98,7 @@ def train(arch, encoder):
             trainer.checkpoint_callback.last_model_path
         )
 
-    trainee = traineeClass.load_from_checkpoint(
+    trainee = Trainee.load_from_checkpoint(
         trainer.checkpoint_callback.best_model_path,
         **c["training"],
         **c["model"],
