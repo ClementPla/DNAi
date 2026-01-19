@@ -212,5 +212,5 @@ def run_model(
             size=(h, w),
             mode="bilinear",
         )
-
+    torch.cuda.empty_cache()
     return probabilities
