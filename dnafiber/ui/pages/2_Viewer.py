@@ -82,7 +82,6 @@ def start_inference(
     image,
     model_name,
     use_tta=DV.USE_TTA,
-    use_correction=DV.USE_CORRECTION,
     prediction_threshold=DV.PREDICTION_THRESHOLD,
     inference_id=None,
 ):
@@ -103,8 +102,9 @@ def start_inference(
         image,
         "cuda" if torch.cuda.is_available() else "cpu",
         use_tta=use_tta,
-        use_correction=use_correction,
+        use_correction=False,
         prediction_threshold=prediction_threshold,
+        pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
         key=inference_id,
     )
     prediction = prediction.valid_copy()
@@ -121,7 +121,6 @@ def start_inference(
             )
         start = time.time()
         rescaled_image, scale = viewer_components(image, prediction, inference_id)
-        print("Viewer components time:", time.time() - start)
         start = time.time()
         selected_fibers = fiber_ui(
             rescaled_image,
@@ -130,9 +129,9 @@ def start_inference(
                 color1=st.session_state.get("color1", "red"),
                 color2=st.session_state.get("color2", "green"),
             ),
+            pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
             key=inference_id,
         )
-        print("Fiber UI time:", time.time() - start)
     for fiber in prediction:
         if fiber.fiber_id in selected_fibers:
             fiber.is_an_error = True
@@ -295,12 +294,6 @@ if on_session_start():
                 help="Use test time augmentation to improve segmentation results.",
             )
 
-            st.checkbox(
-                "Use error detection and filtering",
-                key="use_correction",
-                help="Use the error filtering model to improve detection results.",
-            )
-
             st.slider(
                 "Prediction threshold",
                 min_value=0.0,
@@ -327,7 +320,6 @@ if on_session_start():
         file_id,
         str(model_name),
         st.session_state.get("use_tta", DV.USE_TTA),
-        st.session_state.get("use_correction", DV.USE_CORRECTION),
         st.session_state.get("prediction_threshold", DV.PREDICTION_THRESHOLD),
     )
     col1, col2, col3 = st.columns([1, 1, 1])
@@ -336,7 +328,6 @@ if on_session_start():
         image=image,
         model_name=model_name,
         use_tta=st.session_state.get("use_tta", DV.USE_TTA),
-        use_correction=st.session_state.get("use_correction", DV.USE_CORRECTION),
         prediction_threshold=st.session_state.get(
             "prediction_threshold", DV.PREDICTION_THRESHOLD
         ),

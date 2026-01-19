@@ -139,7 +139,6 @@ def run_one_file(
     file,
     model,
     use_tta=DV.USE_TTA,
-    use_correction=DV.USE_CORRECTION,
     prediction_threshold=DV.PREDICTION_THRESHOLD,
     inference_id="",
 ):
@@ -163,12 +162,10 @@ def run_one_file(
         image,
         "cuda" if torch.cuda.is_available() else "cpu",
         use_tta,
-        use_correction,
         prediction_threshold,
         key=inference_id,
     )
     results = results.filtered_copy()
-    st.write(f"Detected {len(results)} fibers in {filename}")
     df = show_fibers_cacheless(results, image, resolution=256)
     df["image_name"] = filename
     return df
@@ -210,7 +207,6 @@ def run_inference(model_name, use_tta=DV.USE_TTA, use_correction=DV.USE_CORRECTI
             file_id,
             model_name,
             use_tta,
-            use_correction,
             prediction_threshold,
         )
         try:
@@ -218,7 +214,6 @@ def run_inference(model_name, use_tta=DV.USE_TTA, use_correction=DV.USE_CORRECTI
                 file,
                 model,
                 use_tta,
-                use_correction,
                 inference_id=inference_id,
                 prediction_threshold=prediction_threshold,
             )
@@ -268,9 +263,9 @@ if st.session_state.get("files_uploaded", None):
                 format_func=lambda x: MODELS_ZOO_R[x],
                 index=0,
                 help="Select a model to use for inference",
-                disabled=st.session_state.get("use_ensemble", False),
+                disabled=st.session_state.get("use_ensemble", DV.USE_ENSEMBLE),
             )
-            if st.session_state.get("use_ensemble", False):
+            if st.session_state.get("use_ensemble", DV.USE_ENSEMBLE):
                 st.warning(
                     "Ensemble model is selected. All available models will be used for inference."
                 )
@@ -282,12 +277,6 @@ if st.session_state.get("files_uploaded", None):
                 help="Use test time augmentation to improve segmentation results.",
             )
 
-            st.checkbox(
-                "Use error detection and filtering",
-                key="use_correction",
-                help="Use the error filtering model to improve detection results.",
-            )
-
     tab_segmentation, tab_charts = st.tabs(["Segmentation", "Charts"])
 
     with tab_segmentation:
@@ -295,8 +284,7 @@ if st.session_state.get("files_uploaded", None):
         if run_segmentation:
             run_inference(
                 model_name=model_name,
-                use_tta=st.session_state.get("use_tta", False),
-                use_correction=st.session_state.get("use_correction", False),
+                use_tta=st.session_state.get("use_tta", DV.USE_TTA),
             )
             st.balloons()
         if st.session_state.get("results", None) is not None:

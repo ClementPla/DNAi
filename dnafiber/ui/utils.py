@@ -73,15 +73,12 @@ def bokeh_imshow(fig, image):
     fig.image_rgba(image=[img], x=0, y=0, dw=image.shape[1], dh=image.shape[0])
 
 
-def build_inference_id(
-    file_id, model_name, use_tta, use_correction, prediction_threshold
-) -> str:
+def build_inference_id(file_id, model_name, use_tta, prediction_threshold) -> str:
     assert isinstance(file_id, str), "file_id must be a string"
     assert isinstance(model_name, (str, int)), (
         "model_name must be a string or an integer"
     )
     assert isinstance(use_tta, bool), "use_tta must be a boolean"
-    assert isinstance(use_correction, bool), "use_correction must be a boolean"
     assert isinstance(prediction_threshold, float), (
         "prediction_threshold must be a float"
     )
@@ -89,7 +86,6 @@ def build_inference_id(
     inference_id = (
         (file_id + f"_{str(model_name)}")
         + ("_use_tta" if use_tta else "_no_tta")
-        + ("_detect_errors" if use_correction else "_no_detect_errors")
         + f"_{prediction_threshold:.2f}"
     )
     return inference_id

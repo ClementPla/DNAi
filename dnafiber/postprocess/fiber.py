@@ -362,6 +362,9 @@ class Fibers:
     def only_double_copy(self):
         return Fibers([fiber for fiber in self.fibers if fiber.is_double])
 
+    def only_triple_copy(self):
+        return Fibers([fiber for fiber in self.fibers if fiber.is_triple])
+
     def union(self, other, ratio=0.5):
         union = Fibers(self.fibers)
         for fiber in other:

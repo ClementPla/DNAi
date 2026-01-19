@@ -67,18 +67,14 @@ def build_multichannel_loader(accepted_formats):
             unsafe_allow_html=True,
         )
         st.markdown(
-            "By default, we assume that the first channel in CZI/TIFF file is <span style='color: green;'>the second analog</span>, (which happens to be the case in Zeiss microscope) "
-            "which means that we swap the order of the first two channels for processing.",
+            "It may happen that the first channel in CZI/TIFF file is <span style='color: green;'>the second analog</span>, (as in Zeiss microscope) "
+            "which means that you need to swap the order of the first two channels for processing.",
             unsafe_allow_html=True,
         )
-        st.write("If this not the intended behavior, please tick the box below:")
+        st.write("If this is the case, please tick the box below:")
         st.checkbox(
             "Reverse the channels interpretation",
             key="reverse_channels",
-        )
-        st.warning(
-            "Please note that we only swap the channels for raw (CZI, TIFF) files. JPEG and PNG files "
-            "are assumed to be already in the correct order (First analog in red and second analog in green). "
         )
 
         st.info(

@@ -16,6 +16,7 @@ def ui_inference(
     _device,
     use_tta=True,
     use_correction=True,
+    pixel_size=0.13,
     prediction_threshold=1 / 3,
     key="default",
 ) -> np.ndarray | Fibers:
@@ -23,7 +24,7 @@ def ui_inference(
         _model,
         _image,
         _device,
-        pixel_size=st.session_state.get("pixel_size", 0.13),
+        pixel_size=pixel_size,
         use_tta=use_tta,
         prediction_threshold=prediction_threshold,
         use_correction=use_correction,

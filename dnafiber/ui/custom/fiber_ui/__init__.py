@@ -17,7 +17,7 @@ else:
     _component_func = components.declare_component("fiber_ui", path=build_dir)
 
 
-def fiber_ui(image, fibers, key=None):
+def fiber_ui(image, fibers, pixel_size, key=None):
     """Create a new instance of "fiber_ui".
 
     Parameters
@@ -37,6 +37,7 @@ def fiber_ui(image, fibers, key=None):
         elements=fibers,
         image_w=image.shape[1],
         image_h=image.shape[0],
+        pixel_size=pixel_size,
         key=key,
         default=[],
     )
