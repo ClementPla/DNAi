@@ -249,7 +249,7 @@ function FiberComponent(
   const svgHeight = Math.min(VIEWER_HEIGHT, width * (image_h / image_w))
   const scaleX = width / image_w
   const scaleY = VIEWER_HEIGHT / image_h
-  const fitScale = Math.min(0.25, Math.min(scaleX, scaleY))
+  const fitScale = Math.min(scaleX, scaleY)
 
   const margin = (4 * Math.min(image_w, image_h)) / 1024
   const default_radius = Math.min(image_w, image_h) / 1024
@@ -388,9 +388,9 @@ function FiberComponent(
             <TransformWrapper
               ref={transformRef}
               disabled={disabled}
-              minScale={0.5 * fitScale}
+              minScale={0.75 * Math.max(fitScale, 0.9)}
               maxScale={20}
-              initialScale={fitScale}
+              initialScale={Math.max(fitScale, 0.9)}
               centerOnInit={true}
               wheel={{ smoothStep: 0.01, step: 0.5 }}
               onTransformed={handleTransform}

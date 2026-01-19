@@ -38,13 +38,17 @@ def upload_to_hub(model, arch, encoder):
 def _get_model(revision: Models, device="cuda"):
     if revision is None:
         model = Trainee.from_pretrained(
-            "ClementP/DeepFiberQV3", arch="unet", encoder_name="se_resnet50"
+            "ClementP/DeepFiberQV3",
+            arch="unet",
+            encoder_name="se_resnet50",
+            encoder_weights=None,
         )
     else:
         model = Trainee.from_pretrained(
             "ClementP/DeepFiberQV3",
             revision=revision,
             force_download=False,
+            encoder_weights=None,
         )
     return model.eval().to(device)
 
