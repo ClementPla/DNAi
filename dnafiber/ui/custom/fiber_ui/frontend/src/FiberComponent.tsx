@@ -344,10 +344,7 @@ function FiberComponent(
               />
             </span>
 
-            <span style={{ fontSize: 14 }}>
-              {elements.length} fibers (
-              {elements.filter((el: Fiber) => el.is_error).length} errors)
-            </span>
+            <span style={{ fontSize: 14 }}>{elements.length} fibers</span>
 
             <Button onClick={() => setSelectedFibers([])}>Clear</Button>
             <Button onClick={() => Streamlit.setComponentValue(selectedFibers)}>
