@@ -8,12 +8,11 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader
 from skimage.measure import label, regionprops
 from skimage.morphology import skeletonize, dilation
-from skimage.segmentation import expand_labels
 import torch
 from nntools.dataset.composer import CacheBullet
 import cv2
-from timm.data.loader import MultiEpochsDataLoader
 from dnafiber.data.preprocess import preprocess
+from dnafiber.data.utils import convert_rgb_to_mask
 
 cv2.setNumThreads(0)
 
@@ -38,15 +37,7 @@ def to_polar_space(image, mask):
 
 @D.nntools_wrapper
 def convert_mask(mask):
-    output = np.zeros(mask.shape[:2], dtype=np.uint8)
-    output[mask[:, :, 0] > 150] = 1
-    output[mask[:, :, 1] > 150] = 2
-    binary_mask = output > 0
-    skeleton = skeletonize(binary_mask) * output
-    output = expand_labels(skeleton, 2)
-    output = np.clip(output, 0, 2)
-    output = output.astype(np.uint8)
-    return {"mask": output}
+    return convert_rgb_to_mask(mask=mask)
 
 
 @D.nntools_wrapper

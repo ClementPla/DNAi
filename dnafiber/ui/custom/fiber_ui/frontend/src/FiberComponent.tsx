@@ -114,7 +114,7 @@ const FlattenedFiber: React.FC<FlattenedFiberProps> = ({
 
   // Use actual fiber length as bar width
   const barWidth = totalLengthPx
-  const barHeight = 8
+  const barHeight = 4
   const fontSize = 8
 
   // Center the bar under the fiber's bounding box
@@ -197,33 +197,22 @@ const FlattenedFiber: React.FC<FlattenedFiberProps> = ({
 
 const engine = new Styletron()
 
-// Simple scale calculation
 function getScaleInfo(
-  pixelSize: number,
-  currentScale: number,
-  containerWidth: number,
-  imageWidth: number
+  pixelSize: number, // um per image pixel
+  currentScale: number, // multiplier from react-zoom-pan-pinch
+  baseScale: number // screen pixels per viewBox unit at zoom 1.0
 ) {
-  const screenPixelsPerImagePixel = (containerWidth / imageWidth) * currentScale
-  const umPerScreenPixel = pixelSize / screenPixelsPerImagePixel
+  const actualScreenPixelsPerUnit = baseScale * currentScale
+  const micronsPerScreenPixel = pixelSize / actualScreenPixelsPerUnit
 
-  // Fixed bar width in pixels
-  const barPx = 120
+  const barPx = 100
+  const totalUm = barPx * micronsPerScreenPixel
 
-  // Calculate actual physical length this bar represents
-  const totalUm = barPx * umPerScreenPixel
-
-  // Format with appropriate unit and up to 2 significant digits
   let label: string
   if (totalUm >= 1000) {
-    const mm = totalUm / 1000
-    label = `${mm.toPrecision(2)} mm`
-  } else if (totalUm >= 1) {
-    label = `${totalUm.toPrecision(2)} μm`
+    label = `${(totalUm / 1000).toPrecision(3)} mm`
   } else {
-    // Sub-micrometer: show in nm
-    const nm = totalUm * 1000
-    label = `${nm.toPrecision(2)} nm`
+    label = `${totalUm.toPrecision(3)} μm`
   }
 
   return { barPx, label }
@@ -244,24 +233,32 @@ function FiberComponent(
   const [hideBbox, setHideBbox] = useState(false)
   const [animated, setAnimated] = useState(false)
   const [selectedFibers, setSelectedFibers] = useState<number[]>([])
-  const [currentScale, setCurrentScale] = useState(1)
   const [hoveredFiberId, setHoveredFiberId] = useState<number | null>(null)
   const transformRef = useRef<ReactZoomPanPinchRef | null>(null)
 
   // Fixed heights in pixels
   const TOOLBAR_HEIGHT = 56
-  const VIEWER_HEIGHT = 600
+  const VIEWER_HEIGHT = 650
 
   // Tell Streamlit the exact height
   useEffect(() => {
     Streamlit.setFrameHeight(TOOLBAR_HEIGHT + VIEWER_HEIGHT + 32)
   }, [])
+  // SVG fills width, height based on aspect ratio but capped
+  const svgWidth = width
+  const svgHeight = Math.min(VIEWER_HEIGHT, width * (image_h / image_w))
+  const scaleX = width / image_w
+  const scaleY = VIEWER_HEIGHT / image_h
+  const fitScale = Math.min(scaleX, scaleY)
 
   const margin = (4 * Math.min(image_w, image_h)) / 1024
   const default_radius = Math.min(image_w, image_h) / 1024
 
   const handleToggle = () => setShowOnlyPolylines((prev) => !prev)
   const handleRecenter = () => transformRef.current?.resetTransform()
+
+  const [currentScale, setCurrentScale] = useState(1)
+
   const handleTransform = useCallback((ref: ReactZoomPanPinchRef) => {
     setCurrentScale(ref.state.scale)
   }, [])
@@ -269,17 +266,20 @@ function FiberComponent(
   const [strokeScale, setstrokeScaleValue] = useState([1])
   const themeMode = theme?.base === "dark" ? LightTheme : DarkTheme
 
-  // SVG fills width, height based on aspect ratio but capped
-  const svgWidth = width
-  const svgHeight = Math.min(VIEWER_HEIGHT, width * (image_h / image_w))
-
   // Scale bar info
-  const { barPx, label } = getScaleInfo(
-    pixel_size,
-    currentScale,
-    svgWidth,
-    image_w
-  )
+  const { barPx, label } = getScaleInfo(pixel_size, currentScale, fitScale)
+  const fontSize = "12px"
+  const buttonOverrides = {
+    BaseButton: {
+      style: {
+        fontSize: fontSize,
+        paddingTop: "4px",
+        paddingBottom: "4px",
+        paddingLeft: "8px",
+        paddingRight: "8px",
+      },
+    },
+  }
 
   return (
     <StyletronProvider value={engine}>
@@ -290,7 +290,7 @@ function FiberComponent(
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 8,
+              gap: 4,
               height: TOOLBAR_HEIGHT,
               overflowX: "auto",
               overflowY: "hidden",
@@ -307,8 +307,20 @@ function FiberComponent(
               "--color-blue": (theme as any)?.colors?.accent ?? "#276ef1",
             }}
           >
-            <Button onClick={handleToggle}>Toggle (T)</Button>
-            <Button onClick={handleRecenter}>Recenter</Button>
+            <Button
+              size="compact"
+              overrides={buttonOverrides}
+              onClick={handleToggle}
+            >
+              Toggle (T)
+            </Button>
+            <Button
+              size="compact"
+              overrides={buttonOverrides}
+              onClick={handleRecenter}
+            >
+              Recenter
+            </Button>
 
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <Switch.Root
@@ -318,7 +330,7 @@ function FiberComponent(
               >
                 <Switch.Thumb className={switch_styles.Thumb} />
               </Switch.Root>
-              <span style={{ fontSize: 14 }}>Hide BBoxes</span>
+              <span style={{ fontSize: fontSize }}>Hide BBoxes</span>
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -329,7 +341,7 @@ function FiberComponent(
               >
                 <Switch.Thumb className={switch_styles.Thumb} />
               </Switch.Root>
-              <span style={{ fontSize: 14 }}>Animated</span>
+              <span style={{ fontSize: fontSize }}>Animated</span>
             </div>
 
             <span className="slider-container">
@@ -344,10 +356,20 @@ function FiberComponent(
               />
             </span>
 
-            <span style={{ fontSize: 14 }}>{elements.length} fibers</span>
+            <span style={{ fontSize: fontSize }}>{elements.length} fibers</span>
 
-            <Button onClick={() => setSelectedFibers([])}>Clear</Button>
-            <Button onClick={() => Streamlit.setComponentValue(selectedFibers)}>
+            <Button
+              size="compact"
+              overrides={buttonOverrides}
+              onClick={() => setSelectedFibers([])}
+            >
+              Clear
+            </Button>
+            <Button
+              size="compact"
+              overrides={buttonOverrides}
+              onClick={() => Streamlit.setComponentValue(selectedFibers)}
+            >
               Send ({selectedFibers.length})
             </Button>
           </div>
@@ -366,9 +388,9 @@ function FiberComponent(
             <TransformWrapper
               ref={transformRef}
               disabled={disabled}
-              minScale={0.5}
+              minScale={0.5 * fitScale}
               maxScale={20}
-              initialScale={1}
+              initialScale={fitScale}
               centerOnInit={true}
               wheel={{ smoothStep: 0.01, step: 0.5 }}
               onTransformed={handleTransform}

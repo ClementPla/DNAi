@@ -1,31 +1,37 @@
-def map_condition_name_gt(short_name):
-    """Map short condition names to full names.
+def map_condition_name_gt(short_name: str) -> str:
+    """
+    Map short-form condition names to full names.
 
     Examples:
         'H-siNT' -> 'Hela_siNT'
         'H-siM#1' -> 'Hela_siMMS22L#1'
-        'H-siT#4' -> 'Hela_siTONSL#4'
-        'H-siT#AB3' -> 'Hela_siTONSL#AB3'
-        'U-siM#2' -> 'U2OS_siMMS22L#2'
+        'U-siT#2' -> 'U2OS_siTONSL#2'
     """
-    # Cell line prefix
-    if short_name.startswith("U-"):
-        prefix = "U2OS_"
+    # Cell line mapping
+    if short_name.startswith("H-"):
+        cell_line = "Hela"
         rest = short_name[2:]
-    elif short_name.startswith("H-"):
-        prefix = "Hela_"
+    elif short_name.startswith("U-"):
+        cell_line = "U2OS"
         rest = short_name[2:]
     else:
         raise ValueError(f"Unknown cell line prefix: {short_name}")
 
-    # Condition mapping
-    if rest == "siNT":
-        condition = "siNT"
-    elif rest.startswith("siM#"):
-        condition = rest.replace("siM#", "siMMS22L#")
-    elif rest.startswith("siT#"):
-        condition = rest.replace("siT#", "siTONSL#")
+    # Target mapping
+    if rest.startswith("siNT"):
+        target = "siNT"
+        suffix = rest[4:]
+    elif rest.startswith("siM"):
+        target = "siMMS22L"
+        suffix = rest[3:]
+    elif rest.startswith("siT"):
+        target = "siTONSL"
+        suffix = rest[3:]
     else:
-        raise ValueError(f"Unknown condition: {rest}")
+        raise ValueError(f"Unknown target in: {short_name}")
 
-    return prefix + condition
+    # Handle '#1AB3' -> '#AB3' quirk
+    if suffix == "#1AB3":
+        suffix = "#AB3"
+
+    return f"{cell_line}_{target}{suffix}"

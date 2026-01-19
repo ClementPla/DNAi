@@ -9,31 +9,9 @@ import streamlit as st
 from dnafiber.data.readers import read_img, format_raw_image
 from dnafiber.data.preprocess import preprocess
 from dnafiber.postprocess.core import extract_fibers
-from dnafiber.data.dataset import convert_mask
 from time import time
-
-
-def read_svg(svg_path):
-    doc = minidom.parse(str(svg_path))
-    img_strings = {
-        path.getAttribute("id"): path.getAttribute("href")
-        for path in doc.getElementsByTagName("image")
-    }
-    doc.unlink()
-
-    red = img_strings["Red"]
-    green = img_strings["Green"]
-    red = base64.b64decode(red.split(",")[1])
-    green = base64.b64decode(green.split(",")[1])
-    red = cv2.imdecode(np.frombuffer(red, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
-    green = cv2.imdecode(np.frombuffer(green, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
-
-    red = cv2.cvtColor(red, cv2.COLOR_BGRA2GRAY)
-    green = cv2.cvtColor(green, cv2.COLOR_BGRA2GRAY)
-    mask = np.zeros_like(red)
-    mask[red > 0] = 1
-    mask[green > 0] = 2
-    return mask
+from skimage.morphology import skeletonize
+from skimage.segmentation import expand_labels
 
 
 def extract_bboxes(mask):
@@ -53,9 +31,14 @@ def extract_bboxes(mask):
 
 def convert_rgb_to_mask(image, threshold=200):
     output = np.zeros(image.shape[:2], dtype=np.uint8)
-    output[image[:, :, 0] > threshold] = 1
-    output[image[:, :, 1] > threshold] = 2
-    return output
+    output[image[:, :, 0] > 150] = 1
+    output[image[:, :, 1] > 150] = 2
+    binary_mask = output > 0
+    skeleton = skeletonize(binary_mask) * output
+    output = expand_labels(skeleton, 2)
+    output = np.clip(output, 0, 2)
+    output = output.astype(np.uint8)
+    return {"mask": output}
 
 
 def numpy_to_base64_png(image_array):
@@ -198,6 +181,6 @@ def mask_filepath_to_fibers(filepath, RGB2GRB=False):
     mask = cv2.imread(str(filepath), cv2.IMREAD_COLOR_RGB)
     if RGB2GRB:
         mask = mask[:, :, [1, 0, 2]]
-    mask = convert_mask(mask=mask)["mask"]
+    mask = convert_rgb_to_mask(mask=mask)["mask"]
     fibers = extract_fibers(mask)
     return fibers

@@ -93,4 +93,5 @@ def load_dataframe(
     if rename_map is not None:
         df_all["Type"] = df_all["Type"].apply(rename_map)
 
+    df_all.drop(["Fiber ID", "Valid"], axis=1, inplace=True, errors="ignore")
     return df_all

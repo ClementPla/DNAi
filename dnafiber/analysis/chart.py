@@ -87,7 +87,7 @@ def create_boxen_plot(
         plt.yticks([0.125, 0.25, 0.5, 1, 2, 4, 8], [0.125, 0.25, 0.5, 1, 2, 4, 8])
     plt.minorticks_off()
     plt.ylim(*yrange)
-    plt.xticks(rotation=rotate_xticks)
+    plt.xticks(rotation=rotate_xticks, ha="right")
     plt.xlabel("")
     plt.grid(axis="y", linestyle="--", alpha=0.7)
 
@@ -143,7 +143,9 @@ def create_swarm_plot(
         plt.yticks([0.125, 0.25, 0.5, 1, 2, 4, 8], [0.125, 0.25, 0.5, 1, 2, 4, 8])
     plt.minorticks_off()
     plt.ylim(*yrange)
-    plt.xticks(rotation=rotate_xticks)
+    # Set anchor of xticks to right
+    plt.xticks(rotation=rotate_xticks, ha="right")
+
     plt.xlabel("")
     plt.grid(axis="y", linestyle="--", alpha=0.7)
 
