@@ -1,6 +1,6 @@
 import os
 import streamlit.components.v1 as components
-from dnafiber.data.utils import numpy_to_base64_png, numpy_to_base64_jpeg
+from dnafiber.data.utils import numpy_to_base64_jpeg
 import time
 
 _RELEASE = True
