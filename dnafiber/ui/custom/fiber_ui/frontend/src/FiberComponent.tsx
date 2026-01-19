@@ -114,7 +114,7 @@ const FlattenedFiber: React.FC<FlattenedFiberProps> = ({
 
   // Use actual fiber length as bar width
   const barWidth = totalLengthPx
-  const barHeight = 4
+  const barHeight = 8
   const fontSize = 8
 
   // Center the bar under the fiber's bounding box
