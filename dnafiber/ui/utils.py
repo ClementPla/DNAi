@@ -73,7 +73,9 @@ def bokeh_imshow(fig, image):
     fig.image_rgba(image=[img], x=0, y=0, dw=image.shape[1], dh=image.shape[0])
 
 
-def build_inference_id(file_id, model_name, use_tta, prediction_threshold) -> str:
+def build_inference_id(
+    file_id, model_name, use_tta, prediction_threshold, low_end_hardware
+) -> str:
     assert isinstance(file_id, str), "file_id must be a string"
     assert isinstance(model_name, (str, int)), (
         "model_name must be a string or an integer"
@@ -82,11 +84,13 @@ def build_inference_id(file_id, model_name, use_tta, prediction_threshold) -> st
     assert isinstance(prediction_threshold, float), (
         "prediction_threshold must be a float"
     )
+    assert isinstance(low_end_hardware, bool), "low_end_hardware must be a boolean"
 
     inference_id = (
         (file_id + f"_{str(model_name)}")
         + ("_use_tta" if use_tta else "_no_tta")
         + f"_{prediction_threshold:.2f}"
+        + ("_low_end" if low_end_hardware else "_high_end")
     )
     return inference_id
 
@@ -116,6 +120,8 @@ def init_session_states():
         st.session_state["use_correction"] = DV.USE_CORRECTION
     if "use_ensemble" not in st.session_state:
         st.session_state["use_ensemble"] = DV.USE_ENSEMBLE
+    if "low_end_hardware" not in st.session_state:
+        st.session_state["low_end_hardware"] = DV.LOW_END_HARDWARE
     if st.session_state.get("files_uploaded", None) is None:
         st.session_state["files_uploaded"] = []
 

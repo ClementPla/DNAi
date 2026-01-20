@@ -18,6 +18,7 @@ def ui_inference(
     use_correction=True,
     pixel_size=0.13,
     prediction_threshold=1 / 3,
+    low_end_hardware=False,
     key="default",
 ) -> np.ndarray | Fibers:
     return inference(
@@ -28,6 +29,7 @@ def ui_inference(
         use_tta=use_tta,
         prediction_threshold=prediction_threshold,
         use_correction=use_correction,
+        low_end_hardware=low_end_hardware,
     )
 
 
@@ -49,12 +51,14 @@ def inference(
     only_segmentation=False,
     use_correction=None,
     prediction_threshold=1 / 3,
+    low_end_hardware=False,
     verbose=True,
 ) -> np.ndarray | Fibers:
     """
     A cacheless version of the ui_inference function.
     This function does not use caching and is intended for use in scenarios where caching is not desired.
     """
+
     if use_correction:
         correction_model = load_model()
     else:
@@ -73,7 +77,7 @@ def inference(
             formatted_model = [get_model(model)]
         else:
             formatted_model = [model]
-
+    start = time.time()
     with torch.inference_mode():
         output = run_model(
             formatted_model,
@@ -83,6 +87,7 @@ def inference(
             use_tta=use_tta,
             verbose=verbose,
             prediction_threshold=prediction_threshold,
+            low_end_hardware=low_end_hardware,
         ).cpu()
 
     with st.spinner("Processing model output..."):
@@ -91,7 +96,7 @@ def inference(
         output = output.astype(np.uint8)
 
     if verbose:
-        print("Segmentation done...")
+        print("Segmentation time:", time.time() - start)
     if only_segmentation:
         return output
     with st.spinner("Post-processing segmentation..."):

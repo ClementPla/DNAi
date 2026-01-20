@@ -16,7 +16,8 @@ def format_raw_image(image):
         image = np.moveaxis(image, 0, -1)
     # Map to uint8 (full range)
     if image.dtype != np.uint8:
-        image = (255 * (image / np.max(image))).astype(np.uint8)
+        image = image.astype(np.float32)
+        image = 255.0 * (image / np.max(image))
     return image
 
 

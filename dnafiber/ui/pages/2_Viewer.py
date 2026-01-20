@@ -105,6 +105,7 @@ def start_inference(
         use_correction=False,
         prediction_threshold=prediction_threshold,
         pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
+        low_end_hardware=st.session_state.get("low_end_hardware", DV.LOW_END_HARDWARE),
         key=inference_id,
     )
     prediction = prediction.valid_copy()
@@ -268,6 +269,12 @@ if on_session_start():
     thumbnail = get_resized_image(image, file_id)
 
     with st.sidebar:
+        st.checkbox(
+            "Low-end hardware mode",
+            key="low_end_hardware",
+            help="Enable this option if you are using a computer with limited resources (e.g., less than 8GB of RAM or no dedicated GPU). "
+            "This will reduce the memory consumption of the application at the cost of some performance.",
+        )
         with st.expander("Model", expanded=True):
             st.checkbox(
                 "Ensemble model",
@@ -321,6 +328,7 @@ if on_session_start():
         str(model_name),
         st.session_state.get("use_tta", DV.USE_TTA),
         st.session_state.get("prediction_threshold", DV.PREDICTION_THRESHOLD),
+        st.session_state.get("low_end_hardware", DV.LOW_END_HARDWARE),
     )
     col1, col2, col3 = st.columns([1, 1, 1])
 

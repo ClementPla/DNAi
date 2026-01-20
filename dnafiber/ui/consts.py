@@ -5,3 +5,4 @@ class DefaultValues:
     USE_TTA = True
     USE_CORRECTION = False
     USE_ENSEMBLE = False
+    LOW_END_HARDWARE = False

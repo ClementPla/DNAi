@@ -233,6 +233,12 @@ with cols[0]:
         build_multichannel_loader(accepted_formats)
 
 with st.sidebar:
+    st.checkbox(
+        "Low-end hardware mode",
+        key="low_end_hardware",
+        help="Enable this option if you are using a computer with limited resources (e.g., less than 8GB of RAM or no dedicated GPU). "
+        "This will reduce the memory consumption of the application at the cost of some performance.",
+    )
     clear_stack = st.button("Clear all uploaded files")
     if clear_stack:
         st.session_state["files_uploaded"] = []

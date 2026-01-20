@@ -57,18 +57,15 @@ def convert_mask_to_image(mask, expand=False):
 class BridgeGap(nn.Module):
     def __init__(self, predictive_threshold=1 / 3):
         super().__init__()
-        self.kernel = nn.Parameter(
-            torch.ones((3, 3), dtype=torch.float32), requires_grad=False
-        )
+
+        self.register_buffer("kernel", torch.ones((3, 3)))
         self.predictive_threshold = predictive_threshold
 
     def forward(self, probabilities):
         pos_prob = 1 - probabilities[:, :1, :, :]
 
         # Morphological closing to bridge small gaps
-        pos_prob = K.morphology.dilation(
-            (pos_prob).float(), self.kernel, engine="convolution"
-        )
+        pos_prob = K.morphology.dilation(pos_prob, self.kernel, engine="convolution")
 
         pos_prob = pos_prob > self.predictive_threshold
         probabilities[:, :1] = ~pos_prob
@@ -171,13 +168,17 @@ def run_model(
     use_tta=False,
     prediction_threshold=1 / 3,
     verbose=False,
+    low_end_hardware=False,
 ):
     if isinstance(model, str):
         model = _get_model(device=device, revision=model)
     model_pixel_size = 0.26
 
     scale = scale / model_pixel_size
-    tensor = transform(image=image)["image"].unsqueeze(0).to(device)
+
+    tensor = transform(image=image)["image"].unsqueeze(0)
+    if not low_end_hardware:
+        tensor = tensor.to(device)
     h, w = tensor.shape[2], tensor.shape[3]
     device = torch.device(device)
     sliding_window = None
@@ -185,10 +186,11 @@ def run_model(
     if int(h * scale) > 1024 or int(w * scale) > 1024:
         sliding_window = SlidingWindowInferer(
             roi_size=(1024, 1024),
-            sw_batch_size=4,
-            overlap=0.15,
+            sw_batch_size=2 if low_end_hardware else 8,
+            overlap=0.25,
             mode="gaussian",
-            device=device,
+            sw_device=device,
+            cpu_thresh=(4096**2) if low_end_hardware else None,
             progress=verbose,
         )
 
