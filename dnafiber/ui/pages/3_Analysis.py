@@ -210,6 +210,9 @@ def run_inference(model_name, use_tta=DV.USE_TTA, use_correction=DV.USE_CORRECTI
             model_name,
             use_tta,
             prediction_threshold,
+            low_end_hardware=st.session_state.get(
+                "low_end_hardware", DV.LOW_END_HARDWARE
+            ),
         )
         try:
             df = run_one_file(

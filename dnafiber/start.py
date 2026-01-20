@@ -97,6 +97,8 @@ def main():
                     "pip",
                     "install",
                     "--upgrade",
+                    "--upgrade-strategy",
+                    "only-if-needed",
                     "--no-cache-dir",
                     "git+https://github.com/ClementPla/DNAi.git",
                 ]
