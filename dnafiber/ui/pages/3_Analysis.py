@@ -141,6 +141,7 @@ def run_one_file(
     use_tta=DV.USE_TTA,
     prediction_threshold=DV.PREDICTION_THRESHOLD,
     inference_id="",
+    low_end_hardware=DV.LOW_END_HARDWARE,
 ):
     if isinstance(file, tuple):
         if file[0] is None:
@@ -164,6 +165,7 @@ def run_one_file(
         use_tta,
         prediction_threshold,
         key=inference_id,
+        low_end_hardware=low_end_hardware,
     )
     results = results.filtered_copy()
     df = show_fibers_cacheless(results, image, resolution=256)
@@ -216,6 +218,9 @@ def run_inference(model_name, use_tta=DV.USE_TTA, use_correction=DV.USE_CORRECTI
                 use_tta,
                 inference_id=inference_id,
                 prediction_threshold=prediction_threshold,
+                low_end_hardware=st.session_state.get(
+                    "low_end_hardware", DV.LOW_END_HARDWARE
+                ),
             )
         except Exception as e:
             st.error(f"Error processing {filename}: {e}")
@@ -237,6 +242,12 @@ if st.session_state.get("files_uploaded", None):
     run_segmentation = st.button("Run Segmentation", use_container_width=True)
 
     with st.sidebar:
+        st.checkbox(
+            "Low-end hardware mode",
+            key="low_end_hardware",
+            help="Enable this option if you are using a computer with limited resources (e.g., less than 8GB of RAM or no dedicated GPU). "
+            "This will reduce the memory consumption of the application at the cost of some performance.",
+        )
         st.slider(
             "Pixel size (µm)",
             min_value=0.01,
