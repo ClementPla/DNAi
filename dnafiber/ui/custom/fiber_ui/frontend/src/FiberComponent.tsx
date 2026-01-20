@@ -466,15 +466,40 @@ function FiberComponent(
 
                       <g className="hover-paths">
                         {el.points.map((line: string, line_idx: number) => (
-                          <polyline
-                            className={animated ? "fibers-animated" : "fibers"}
-                            key={`${line_idx}_${idx}`}
-                            points={line}
-                            fill="none"
-                            stroke={el.colors[line_idx]}
-                            strokeWidth={default_radius * strokeScale[0]}
-                            opacity={showOnlyPolylines || hideBbox ? 1.0 : 0.0}
-                          />
+                          <React.Fragment key={`${line_idx}_${idx}`}>
+                            {/* 1. The "Halo" / Background Stroke */}
+                            <polyline
+                              className={
+                                animated ? "fibers-animated" : "fibers"
+                              }
+                              points={line}
+                              fill="none"
+                              stroke="white" // or "white" depending on your image brightness
+                              strokeWidth={
+                                default_radius * strokeScale[0] * 1.8
+                              } // 80% thicker
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              opacity={
+                                showOnlyPolylines || hideBbox ? 1.0 : 0.0
+                              }
+                            />
+                            {/* 2. The Actual Colored Fiber */}
+                            <polyline
+                              className={
+                                animated ? "fibers-animated" : "fibers"
+                              }
+                              points={line}
+                              fill="none"
+                              stroke={el.colors[line_idx]}
+                              strokeWidth={default_radius * strokeScale[0]}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              opacity={
+                                showOnlyPolylines || hideBbox ? 1.0 : 0.0
+                              }
+                            />
+                          </React.Fragment>
                         ))}
                       </g>
                     </g>

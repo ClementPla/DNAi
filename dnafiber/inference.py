@@ -185,12 +185,12 @@ def run_model(
 
     if int(h * scale) > 1024 or int(w * scale) > 1024:
         sliding_window = SlidingWindowInferer(
-            roi_size=(1024, 1024),
+            roi_size=(512, 512) if low_end_hardware else (1024, 1024),
             sw_batch_size=2 if low_end_hardware else 8,
             overlap=0.25,
             mode="gaussian",
             sw_device=device,
-            cpu_thresh=(4096**2) if low_end_hardware else None,
+            cpu_thresh=(2048**2) if low_end_hardware else None,
             progress=verbose,
         )
 
