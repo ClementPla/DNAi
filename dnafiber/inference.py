@@ -177,8 +177,7 @@ def run_model(
     scale = scale / model_pixel_size
 
     tensor = transform(image=image)["image"].unsqueeze(0)
-    if not low_end_hardware:
-        tensor = tensor.to(device)
+
     h, w = tensor.shape[2], tensor.shape[3]
     device = torch.device(device)
     sliding_window = None
@@ -190,6 +189,7 @@ def run_model(
             overlap=0.25,
             mode="gaussian",
             sw_device=device,
+            device="cpu" if low_end_hardware else device,
             cpu_thresh=(2048**2) if low_end_hardware else None,
             progress=verbose,
         )
@@ -202,6 +202,8 @@ def run_model(
     )
     inferer.to(device)
     with torch.autocast(device_type=device.type):
+        if not low_end_hardware:
+            tensor = tensor.to(device)
         tensor = F.interpolate(
             tensor,
             size=(int(h * scale), int(w * scale)),
