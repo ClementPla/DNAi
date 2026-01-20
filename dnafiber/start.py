@@ -5,6 +5,8 @@ from pathlib import Path
 import importlib.metadata
 import json
 import requests
+import sys
+import tempfile
 
 
 def get_local_commit(package_name="dnafiber"):
@@ -85,27 +87,37 @@ def main():
     except Exception as e:
         print(f"Could not check for updates: {e}")
         valid = None
+
     if valid is None:
-        pass
+        pass  # Couldn't check, continue to app
     elif not valid:
-        # Suggest to auto-update
         response = input("Do you want to update now? [y/N]: ")
         if response.lower() == "y":
-            print("Installing latest version...")
-            subprocess.run(
-                [
-                    "pip",
-                    "install",
-                    "--upgrade",
-                    "--upgrade-strategy",
-                    "only-if-needed",
-                    "--no-cache-dir",
-                    "git+https://github.com/ClementPla/DNAi.git",
-                ]
-            )
-            # Relaunch the script
-            print("Update done! Please restart the application.")
-            return False
+            if sys.platform == "win32":
+                script = tempfile.NamedTemporaryFile(
+                    mode="w", suffix=".bat", delete=False
+                )
+                script.write("""@echo off
+timeout /t 2 /nobreak >nul
+pip install --upgrade --upgrade-strategy only-if-needed git+https://github.com/ClementPla/DNAi.git
+echo Update complete. Restarting...
+DNAI
+""")
+                script.close()
+                subprocess.Popen(
+                    ["cmd", "/c", script.name],
+                    creationflags=subprocess.DETACHED_PROCESS,
+                )
+            else:
+                subprocess.Popen(
+                    "sleep 2 && pip install --upgrade --upgrade-strategy only-if-needed "
+                    "git+https://github.com/ClementPla/DNAi.git && DNAI",
+                    shell=True,
+                    start_new_session=True,
+                )
+
+            print("Update starting in background. The app will restart automatically.")
+            sys.exit(0)
 
     # Start the Streamlit application
     print("Starting Streamlit application...")
