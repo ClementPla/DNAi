@@ -87,12 +87,14 @@ class EnsembleModel(nn.Module):
         self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
-        outputs = [self.softmax(model(x)) for model in self.models]
-        weighted_outputs = [
-            output * weight for output, weight in zip(outputs, self.weights)
-        ]
-        return torch.stack(weighted_outputs).sum(dim=0)
-
+        outputs = None
+        for i, model in enumerate(self.models):
+            out = self.softmax(model(x))
+            if outputs is None:
+                outputs = out
+            else:
+                outputs += out * self.weights[i]
+        return outputs
 
 class SafeTTAWrapper(nn.Module):
     def __init__(self, model, transforms, merge_mode="mean"):
