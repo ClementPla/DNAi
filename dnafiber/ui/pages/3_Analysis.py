@@ -1,5 +1,6 @@
 import streamlit as st
 import torch
+from dnafiber.ui.hardware import create_diagnostics_container, update_diagnostics
 from dnafiber.ui.utils import build_file_id
 from dnafiber.data.utils import load_image, load_multifile_image
 from dnafiber.model.models_zoo import MODELS_ZOO, MODELS_ZOO_R, ENSEMBLE, Models
@@ -156,6 +157,7 @@ def run_one_file(
             file,
             st.session_state.get("reverse_channels", DV.REVERSE_CHANNELS),
             pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
+            clarity=st.session_state.get("clarity", DV.CLARITY),
         )
         filename = file.name
     results = ui_inference(
@@ -182,11 +184,15 @@ def run_inference(model_name, use_tta=DV.USE_TTA, use_correction=DV.USE_CORRECTI
     else:
         with st.spinner("Loading model..."):
             model = get_model(model_name)
+        
+
 
     my_bar = st.progress(0, text="Running segmentation...")
+    diag_container = create_diagnostics_container()
     all_files = st.session_state.files_uploaded
     all_results = []
     for i, file in enumerate(all_files):
+        update_diagnostics(diag_container)
         if isinstance(file, tuple):
             if file[0] is None:
                 filename = file[1].name

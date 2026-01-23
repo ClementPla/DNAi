@@ -62,14 +62,18 @@ class BridgeGap(nn.Module):
         self.predictive_threshold = predictive_threshold
 
     def forward(self, probabilities):
-        pos_prob = 1 - probabilities[:, :1, :, :]
-
-        # Morphological closing to bridge small gaps
-        pos_prob = K.morphology.dilation(pos_prob, self.kernel, engine="convolution")
-
-        pos_prob = pos_prob > self.predictive_threshold
-        probabilities[:, :1] = ~pos_prob
-        probabilities = probabilities.clamp(min=0.0, max=1.0)
+        # Assume channel 0 is background
+        background = probabilities[:, 0:1, :, :]
+        foreground = 1.0 - background
+        
+        # Dilation to bridge gaps
+        bridged_foreground = K.morphology.dilation(foreground, self.kernel)
+        
+        # Thresholding
+        mask = (bridged_foreground > self.predictive_threshold).float()
+        
+        # Re-assign back to background (inverted)
+        probabilities[:, 0:1, :, :] = 1.0 - mask
         return probabilities
 
 
@@ -99,8 +103,7 @@ class SafeTTAWrapper(nn.Module):
 
     def forward(self, x):
         h, w = x.shape[2], x.shape[3]
-        outputs = []
-
+        output_sum = None
         for transformer in self.transforms:
             augmented = transformer.augment_image(x)
             pred = self.model(augmented)
@@ -110,15 +113,15 @@ class SafeTTAWrapper(nn.Module):
             if deaugmented.shape[2] != h or deaugmented.shape[3] != w:
                 deaugmented = F.interpolate(deaugmented, size=(h, w), mode="bilinear")
 
-            outputs.append(deaugmented)
-
-        stacked = torch.stack(outputs)
-        if self.merge_mode == "mean":
-            return stacked.mean(dim=0)
-        elif self.merge_mode == "tsharpen":
-            return (stacked**0.5).mean(dim=0)
-        else:
-            return stacked.mean(dim=0)
+            if self.merge_mode == "tsharpen":
+                deaugmented = deaugmented ** 2
+            if output_sum is None:
+                output_sum = deaugmented
+            else:
+                output_sum += deaugmented
+                
+        output_avg = output_sum / len(self.transforms)
+        return output_avg
 
 
 class Inferer(nn.Module):
@@ -161,7 +164,7 @@ class Inferer(nn.Module):
 
 @torch.inference_mode()
 def run_model(
-    model,
+    model_input, # Renamed to avoid confusion with model instances
     image,
     device,
     scale=0.13,
@@ -170,51 +173,71 @@ def run_model(
     verbose=False,
     low_end_hardware=False,
 ):
-    if isinstance(model, str):
-        model = _get_model(device=device, revision=model)
-    model_pixel_size = 0.26
-
-    scale = scale / model_pixel_size
-
-    tensor = transform(image=image)["image"].unsqueeze(0)
-
-    h, w = tensor.shape[2], tensor.shape[3]
     device = torch.device(device)
-    sliding_window = None
+    
+    # 1. Load Model (only if string)
+    if isinstance(model_input, str):
+        model_instance = _get_model(device=device, revision=model_input)
+    else:
+        model_instance = model_input
 
-    if int(h * scale) > 1024 or int(w * scale) > 1024:
+    # 2. Setup Scaling
+    model_pixel_size = 0.26
+    # If image is 0.13 and model wants 0.26, scale factor is 0.5
+    rescale_factor = scale / model_pixel_size
+
+    # 3. Preprocess Tensor
+    # transform already handles Normalize + ToTensorV2
+    tensor = transform(image=image)["image"].unsqueeze(0)
+    h, w = tensor.shape[2], tensor.shape[3]
+    
+    # Move to device EARLY to speed up interpolation
+    if not low_end_hardware:
+        tensor = tensor.to(device)
+
+    # 4. Sliding Window Configuration
+    sliding_window = None
+    if int(h * rescale_factor) > 1024 or int(w * rescale_factor) > 1024:
         sliding_window = SlidingWindowInferer(
             roi_size=(512, 512) if low_end_hardware else (1024, 1024),
-            sw_batch_size=2 if low_end_hardware else 8,
+            sw_batch_size=1 if low_end_hardware else 4, # Reduced for stability
             overlap=0.25,
             mode="gaussian",
             sw_device=device,
-            device="cpu" if low_end_hardware else device,
-            cpu_thresh=(2048**2) if low_end_hardware else None,
+            device=torch.device("cpu") if low_end_hardware else device,
             progress=verbose,
         )
 
+    # 5. Build Inference Graph
     inferer = Inferer(
-        model=model,
+        model=model_instance,
         sliding_window_inferer=sliding_window,
         use_tta=use_tta,
         prediction_threshold=prediction_threshold,
-    )
-    inferer.to(device)
-    with torch.autocast(device_type=device.type):
-        if not low_end_hardware:
-            tensor = tensor.to(device)
-        tensor = F.interpolate(
-            tensor,
-            size=(int(h * scale), int(w * scale)),
-            mode="bilinear",
-        )
-        probabilities = inferer(tensor)
+    ).to(device)
 
+    # 6. Execute with Mixed Precision
+    with torch.autocast(device_type=device.type, enabled=(device.type == 'cuda')):
+        # Resize to model's expected physical scale
+        input_tensor = F.interpolate(
+            tensor,
+            size=(int(h * rescale_factor), int(w * rescale_factor)),
+            mode="bilinear",
+            align_corners=False
+        )
+        if low_end_hardware:
+            input_tensor = input_tensor.to(device=device)
+        probs = inferer(input_tensor)
+
+        # Resize back to original pixel dimensions
         probabilities = F.interpolate(
-            probabilities,
+            probs,
             size=(h, w),
             mode="bilinear",
+            align_corners=False
         )
-    torch.cuda.empty_cache()
+
+    if device.type == 'cuda':
+        torch.cuda.empty_cache()
+        
     return probabilities

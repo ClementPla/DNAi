@@ -6,3 +6,4 @@ class DefaultValues:
     USE_CORRECTION = False
     USE_ENSEMBLE = False
     LOW_END_HARDWARE = False
+    CLARITY = 1.0

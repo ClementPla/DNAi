@@ -26,15 +26,13 @@ def get_model(device, revision=None):
 
 
 @st.cache_data
-def get_image(_filepath, reverse_channel, id, pixel_size=0.13):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    return load_image(_filepath, reverse_channel, pixel_size=pixel_size, device=device)
+def get_image(_filepath, reverse_channel, id, pixel_size=0.13, clarity=1.0):
+    return load_image(_filepath, reverse_channel, pixel_size=pixel_size, clarity=clarity)
 
 
 @st.cache_data
-def get_multifile_image(_filetuple, id, pixel_size=0.13):
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-    return load_multifile_image(_filetuple, pixel_size=pixel_size, device=device)
+def get_multifile_image(_filetuple, id, pixel_size=0.13, clarity=1.0):
+    return load_multifile_image(_filetuple, pixel_size=pixel_size, clarity=clarity)
 
 
 @st.cache_data
@@ -74,7 +72,7 @@ def bokeh_imshow(fig, image):
 
 
 def build_inference_id(
-    file_id, model_name, use_tta, prediction_threshold, low_end_hardware
+    file_id, model_name, use_tta, prediction_threshold, low_end_hardware, clarity
 ) -> str:
     assert isinstance(file_id, str), "file_id must be a string"
     assert isinstance(model_name, (str, int)), (
@@ -85,24 +83,25 @@ def build_inference_id(
         "prediction_threshold must be a float"
     )
     assert isinstance(low_end_hardware, bool), "low_end_hardware must be a boolean"
-
+    assert isinstance(clarity, float), "clarity must be a float"
     inference_id = (
         (file_id + f"_{str(model_name)}")
         + ("_use_tta" if use_tta else "_no_tta")
         + f"_{prediction_threshold:.2f}"
         + ("_low_end" if low_end_hardware else "_high_end")
+        + f"_clarity{clarity:.2f}"
     )
     return inference_id
 
 
-def build_file_id(file, pixel_size, reverse_channels):
+def build_file_id(file, pixel_size, reverse_channels, clarity) -> str:
     if isinstance(file, tuple):
         file_id = str(hash(file[0] if file[0] is not None else file[1]))
     else:
         file_id = str(hash(file))
 
     file_id = (
-        file_id + f"_{pixel_size}um" + f"_{'rev' if reverse_channels else 'no_rev'}"
+        file_id + f"_{pixel_size}um" + f"_{'rev' if reverse_channels else 'no_rev'}" + f"_clarity{clarity:.2f}"
     )
     return file_id
 
@@ -112,6 +111,8 @@ def init_session_states():
         st.session_state["pixel_size"] = DV.PIXEL_SIZE
     if "reverse_channels" not in st.session_state:
         st.session_state["reverse_channels"] = DV.REVERSE_CHANNELS
+    if "clarity" not in st.session_state:
+        st.session_state["clarity"] = DV.CLARITY
     if "prediction_threshold" not in st.session_state:
         st.session_state["prediction_threshold"] = DV.PREDICTION_THRESHOLD
     if "use_tta" not in st.session_state:

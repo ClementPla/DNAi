@@ -88,12 +88,8 @@ def inference(
             verbose=verbose,
             prediction_threshold=prediction_threshold,
             low_end_hardware=low_end_hardware,
-        ).cpu()
+        ).argmax(dim=1).byte().squeeze(0).cpu().numpy()
 
-    with st.spinner("Processing model output..."):
-        output = output.cpu().numpy()
-        output = np.argmax(output, axis=1).squeeze()
-        output = output.astype(np.uint8)
 
     if verbose:
         print("Segmentation time:", time.time() - start)

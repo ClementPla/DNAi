@@ -122,7 +122,7 @@ def pad_image_to_croppable(_image, bx, by, uid=None):
     return _image
 
 
-def load_image(filepath, reverse_channel, pixel_size=0.13, device="cpu", verbose=False):
+def load_image(filepath, reverse_channel, pixel_size=0.13, verbose=False, clarity=1.0):
     """
     A cacheless version of the get_image function.
     This function does not use caching and is intended for use in scenarios where caching is not desired.
@@ -132,7 +132,7 @@ def load_image(filepath, reverse_channel, pixel_size=0.13, device="cpu", verbose
     if verbose:
         print(f"Image read in {time() - start:.2f}s")
     start = time()
-    image = preprocess(image, pixel_size=pixel_size, verbose=verbose)
+    image = preprocess(image, pixel_size=pixel_size, verbose=verbose, clarity=clarity)
     if verbose:
         print(f"Image preprocessed in {time() - start:.2f}s")
     if reverse_channel:
@@ -142,7 +142,7 @@ def load_image(filepath, reverse_channel, pixel_size=0.13, device="cpu", verbose
     return image
 
 
-def load_multifile_image(_filepaths, pixel_size=0.13, device="cpu"):
+def load_multifile_image(_filepaths, pixel_size=0.13, clarity=1.0):
     result = None
 
     if _filepaths[0] is not None:
@@ -153,7 +153,7 @@ def load_multifile_image(_filepaths, pixel_size=0.13, device="cpu"):
         chan1 = None
     if _filepaths[1] is not None:
         chan2 = read_img(
-            _filepaths[1], False, _filepaths[1].file_id, pixel_size=pixel_size
+            _filepaths[1]
         )
         chan2 = cv2.cvtColor(chan2, cv2.COLOR_RGB2GRAY)
         h, w = chan2.shape[:2]
@@ -173,7 +173,7 @@ def load_multifile_image(_filepaths, pixel_size=0.13, device="cpu"):
         result[:, :, 1] = chan1
 
     result = format_raw_image(result)
-    result = preprocess(result, pixel_size=pixel_size, device=device)
+    result = preprocess(result, pixel_size=pixel_size, clarity=clarity)
     return result
 
 
@@ -181,6 +181,6 @@ def mask_filepath_to_fibers(filepath, RGB2GRB=False):
     mask = cv2.imread(str(filepath), cv2.IMREAD_COLOR_RGB)
     if RGB2GRB:
         mask = mask[:, :, [1, 0, 2]]
-    mask = convert_rgb_to_mask(mask=mask)["mask"]
+    mask = convert_rgb_to_mask(image=mask, threshold=150)["mask"]
     fibers = extract_fibers(mask)
     return fibers

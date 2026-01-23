@@ -22,6 +22,8 @@ MIN_ANGLE = 45
 MIN_BRANCH_LENGTH = 1
 MIN_BRANCH_DISTANCE = 100
 
+MIN_BRANCH_KEEP = 15
+
 
 def handle_multiple_fiber_in_cc(
     fiber,
@@ -228,7 +230,13 @@ def handle_multiple_fiber_in_cc(
             width=max_x - min_x,
             height=max_y - min_y,
         )
-        results.append(FiberProps(bbox=bbox, data=new_fiber))
+        new_fiber_props = FiberProps(bbox=bbox, data=new_fiber)
+        # if the new fiber is not single color and longer than MIN_BRANCH_LENGTH, keep it
+        if (
+            new_fiber_props.category != "single"
+            and new_fiber_props.length >= MIN_BRANCH_KEEP
+        ):
+            results.append(new_fiber_props)
 
     return results
 
