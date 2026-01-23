@@ -9,7 +9,7 @@ from dnafiber.postprocess.fiber import Fibers
 import time
 
 
-@st.cache_data(show_spinner="Running predictions...")
+@st.cache_resource(show_spinner="Running predictions...")
 def ui_inference(
     _model,
     _image,

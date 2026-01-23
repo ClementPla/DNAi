@@ -249,7 +249,6 @@ if on_session_start():
             min_value=0.95,
             max_value=1.0,
             step=0.001,
-            value=1.0,
             key="clarity",
             help="Adjust the clarity of the image preprocessing. Lower values may lead to noisier images.",
         )
