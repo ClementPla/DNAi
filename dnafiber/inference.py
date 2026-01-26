@@ -212,26 +212,20 @@ def run_model(
 
 
 def probas_to_segmentation(probas, prediction_threshold=1 / 3) -> np.ndarray:
-    bg_probs = probas[:, 0:1, :, :]
-    fg_probs = 1.0 - bg_probs
+    # probas shape: [1, 3, H, W]
+    fg_probs = 1.0 - probas[:, 0:1, :, :]
 
-    # Create a mask where fibers are detected
-    # A higher threshold means fewer fibers are detected (higher precision)
-    # A lower threshold means more fibers are detected (higher recall)
-    fiber_mask = (fg_probs >= prediction_threshold).float()
+    # fiber_mask is 1 where we want to FORCE a fiber detection
+    fiber_mask = fg_probs >= prediction_threshold
 
-    # Apply mask:
-    # If below threshold, background becomes 1.0, colors become 0.0
-    final_probs = probas.clone()
-    final_probs[:, 0:1, :, :] = torch.where(
-        fiber_mask == 1, bg_probs, torch.ones_like(bg_probs)
-    )
-    final_probs[:, 1:2, :, :] = torch.where(
-        fiber_mask == 1, probas[:, 1:2, :, :], torch.zeros_like(bg_probs)
-    )
-    final_probs[:, 2:3, :, :] = torch.where(
-        fiber_mask == 1, probas[:, 2:3, :, :], torch.zeros_like(bg_probs)
-    )
+    # We create a copy to avoid modifying the original tensor in-place
+    # significantly if it's used elsewhere
+    detection_map = probas.clone()
 
-    # 4. Final Resize back to original pixel dimensions
-    return final_probs.argmax(dim=1).byte().squeeze(0).cpu().numpy()
+    # LOGIC: If it's a fiber, make background 0 so a color MUST win.
+    # If it's NOT a fiber, make background 1 so it MUST win.
+    detection_map[:, 0:1, :, :] = torch.where(fiber_mask, 0.0, 1.0)
+
+    # 4. Argmax + Conversion
+    # byte() is fine, but uint8 is the standard for masks
+    return detection_map.argmax(dim=1).byte().squeeze(0).cpu().numpy()

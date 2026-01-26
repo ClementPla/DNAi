@@ -318,7 +318,7 @@ if on_session_start():
 
             st.slider(
                 "Prediction threshold",
-                min_value=0.0,
+                min_value=0.15,
                 max_value=1.0,
                 key="prediction_threshold",
                 step=0.01,

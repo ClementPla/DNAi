@@ -1,7 +1,6 @@
 import math
 import time
-from enum import Enum
-
+from dnafiber.inference import run_model, probas_to_segmentation
 import cv2
 import pandas as pd
 import torch
@@ -9,10 +8,8 @@ import torch
 from dnafiber.postprocess import refine_segmentation
 
 from dnafiber.postprocess.fiber import Fibers
-from dnafiber.ui.inference import inference
 from dnafiber.data.utils import numpy_to_base64_png
 from dnafiber.data.utils import load_image, load_multifile_image
-from dnafiber.postprocess.error_detection import load_model
 import numpy as np
 
 
@@ -23,7 +20,6 @@ def run_one_file(
     pixel_size=0.13,
     prediction_threshold=1 / 3,
     use_tta=True,
-    use_correction=False,
     verbose=True,
     low_end_hardware=False,
 ) -> Fibers:
@@ -55,35 +51,55 @@ def run_one_file(
     if verbose:
         print(f"Image loading time: {time.time() - start:.2f} seconds for {filename}")
     start = time.time()
-    prediction = inference(
+    results = inference(
         model=model,
         image=image,
         pixel_size=pixel_size,
         device="cuda" if is_cuda_available else "cpu",
         use_tta=use_tta,
-        use_correction=use_correction,
         only_segmentation=True,
         low_end_hardware=low_end_hardware,
         prediction_threshold=prediction_threshold,
         verbose=verbose,
     )
 
-    if verbose:
-        print(f"Prediction time: {time.time() - start:.2f} seconds for {filename}")
-    start = time.time()
-    correction_model = load_model() if use_correction else None
-
-    results = refine_segmentation(
-        image,
-        prediction,
-        correction_model=correction_model,
-        device="cuda" if is_cuda_available else "cpu",
-        verbose=verbose,
-    )
-    if verbose:
-        print(f"Refinement time: {time.time() - start:.2f} seconds for {filename}")
-
     return results
+
+
+def inference(
+    model,
+    image,
+    device,
+    pixel_size,
+    use_tta=True,
+    prediction_threshold=1 / 3,
+    low_end_hardware=False,
+    verbose=True,
+) -> np.ndarray | Fibers:
+    start = time.time()
+    with torch.inference_mode():
+        output = run_model(
+            model,
+            image=image,
+            device=device,
+            scale=pixel_size,
+            use_tta=use_tta,
+            verbose=verbose,
+            prediction_threshold=prediction_threshold,
+            low_end_hardware=low_end_hardware,
+        )
+        output = probas_to_segmentation(
+            output, prediction_threshold=prediction_threshold
+        )
+
+    if verbose:
+        print("Segmentation time:", time.time() - start)
+
+    start = time.time()
+    output = refine_segmentation(image, output, device=device)
+    if verbose:
+        print("Post-processing time:", time.time() - start)
+    return output
 
 
 def format_results(results: Fibers, pixel_size: float) -> pd.DataFrame:
