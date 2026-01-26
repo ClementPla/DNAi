@@ -65,13 +65,13 @@ class BridgeGap(nn.Module):
         # Assume channel 0 is background
         background = probabilities[:, 0:1, :, :]
         foreground = 1.0 - background
-        
+
         # Dilation to bridge gaps
         bridged_foreground = K.morphology.dilation(foreground, self.kernel)
-        
+
         # Thresholding
         mask = (bridged_foreground > self.predictive_threshold).float()
-        
+
         # Re-assign back to background (inverted)
         probabilities[:, 0:1, :, :] = 1.0 - mask
         return probabilities
@@ -96,6 +96,7 @@ class EnsembleModel(nn.Module):
                 outputs += out * self.weights[i]
         return outputs
 
+
 class SafeTTAWrapper(nn.Module):
     def __init__(self, model, transforms, merge_mode="mean"):
         super().__init__()
@@ -116,12 +117,12 @@ class SafeTTAWrapper(nn.Module):
                 deaugmented = F.interpolate(deaugmented, size=(h, w), mode="bilinear")
 
             if self.merge_mode == "tsharpen":
-                deaugmented = deaugmented ** 2
+                deaugmented = deaugmented**2
             if output_sum is None:
                 output_sum = deaugmented
             else:
                 output_sum += deaugmented
-                
+
         output_avg = output_sum / len(self.transforms)
         return output_avg
 
@@ -166,7 +167,7 @@ class Inferer(nn.Module):
 
 @torch.inference_mode()
 def run_model(
-    model_input, # Renamed to avoid confusion with model instances
+    model_input,  # Renamed to avoid confusion with model instances
     image,
     device,
     scale=0.13,
@@ -176,7 +177,7 @@ def run_model(
     low_end_hardware=False,
 ):
     device = torch.device(device)
-    
+
     # 1. Load Model (only if string)
     if isinstance(model_input, str):
         model_instance = _get_model(device=device, revision=model_input)
@@ -192,7 +193,7 @@ def run_model(
     # transform already handles Normalize + ToTensorV2
     tensor = transform(image=image)["image"].unsqueeze(0)
     h, w = tensor.shape[2], tensor.shape[3]
-    
+
     # Move to device EARLY to speed up interpolation
     if not low_end_hardware:
         tensor = tensor.to(device)
@@ -202,7 +203,7 @@ def run_model(
     if int(h * rescale_factor) > 1024 or int(w * rescale_factor) > 1024:
         sliding_window = SlidingWindowInferer(
             roi_size=(512, 512) if low_end_hardware else (1024, 1024),
-            sw_batch_size=1 if low_end_hardware else 4, # Reduced for stability
+            sw_batch_size=1 if low_end_hardware else 4,  # Reduced for stability
             overlap=0.25,
             mode="gaussian",
             sw_device=device,
@@ -219,13 +220,13 @@ def run_model(
     ).to(device)
 
     # 6. Execute with Mixed Precision
-    with torch.autocast(device_type=device.type, enabled=(device.type == 'cuda')):
+    with torch.autocast(device_type=device.type, enabled=(device.type == "cuda")):
         # Resize to model's expected physical scale
         input_tensor = F.interpolate(
             tensor,
             size=(int(h * rescale_factor), int(w * rescale_factor)),
             mode="bilinear",
-            align_corners=False
+            align_corners=False,
         )
         if low_end_hardware:
             input_tensor = input_tensor.to(device=device)
@@ -233,13 +234,10 @@ def run_model(
 
         # Resize back to original pixel dimensions
         probabilities = F.interpolate(
-            probs,
-            size=(h, w),
-            mode="bilinear",
-            align_corners=False
+            probs, size=(h, w), mode="bilinear", align_corners=False
         )
 
-    if device.type == 'cuda':
+    if device.type == "cuda":
         torch.cuda.empty_cache()
-        
+
     return probabilities

@@ -287,6 +287,8 @@ if on_session_start():
             clarity=st.session_state.get("clarity", DV.CLARITY),
         )
 
+    h, w = image.shape[:2]
+
     thumbnail = get_resized_image(image, file_id)
 
     with st.sidebar:
@@ -342,7 +344,7 @@ if on_session_start():
 
     # image = blocks[which_y, which_x, 0]
     with st.sidebar:
-        st.image(image, caption="Current image", use_container_width=True)
+        st.image(image, caption=f"Current image {w}x{h}", use_container_width=True)
 
     inference_id = build_inference_id(
         file_id,
