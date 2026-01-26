@@ -1,34 +1,68 @@
 import streamlit as st
-from dnafiber.inference import run_model
+from dnafiber.inference import run_model, probas_to_segmentation
 from dnafiber.postprocess.core import refine_segmentation
 import numpy as np
 from dnafiber.ui.utils import _get_model
 import torch
-from dnafiber.postprocess.error_detection import load_model
 from dnafiber.postprocess.fiber import Fibers
 import time
 
 
-@st.cache_resource(show_spinner="Running predictions...")
+@st.cache_data(show_spinner="Running predictions...")
 def ui_inference(
     _model,
     _image,
     _device,
     use_tta=True,
-    use_correction=True,
     pixel_size=0.13,
     prediction_threshold=1 / 3,
     low_end_hardware=False,
+    verbose=True,
     key="default",
 ) -> np.ndarray | Fibers:
-    return inference(
+    start = time.time()
+    probas = ui_exec_model(
         _model,
         _image,
         _device,
         pixel_size=pixel_size,
         use_tta=use_tta,
-        prediction_threshold=prediction_threshold,
-        use_correction=use_correction,
+        low_end_hardware=low_end_hardware,
+        key=key,
+    )
+
+    if verbose:
+        print("Segmentation time:", time.time() - start)
+    prediction = probas_to_segmentation(
+        probas, prediction_threshold=prediction_threshold
+    )
+    start = time.time()
+    if verbose:
+        print("Post-processing segmentation...")
+    with st.spinner("Post-processing segmentation..."):
+        prediction = refine_segmentation(_image, prediction, device=_device)
+    if verbose:
+        print("Post-processing time:", time.time() - start)
+    return prediction
+
+
+@st.cache_data(show_spinner="Get probability maps...", max_entries=1)
+def ui_exec_model(
+    _model,
+    _image,
+    _device,
+    use_tta=True,
+    pixel_size=0.13,
+    low_end_hardware=False,
+    key="default",
+):
+    return run_model(
+        _model,
+        image=_image,
+        device=_device,
+        scale=pixel_size,
+        use_tta=use_tta,
+        verbose=True,
         low_end_hardware=low_end_hardware,
     )
 
@@ -36,7 +70,6 @@ def ui_inference(
 @st.cache_resource
 def get_model(model_name):
     model = _get_model(
-        device="cuda" if torch.cuda.is_available() else "cpu",
         revision=model_name,
     )
     return model
@@ -48,8 +81,6 @@ def inference(
     device,
     pixel_size,
     use_tta=True,
-    only_segmentation=False,
-    use_correction=None,
     prediction_threshold=1 / 3,
     low_end_hardware=False,
     verbose=True,
@@ -59,28 +90,12 @@ def inference(
     This function does not use caching and is intended for use in scenarios where caching is not desired.
     """
 
-    if use_correction:
-        correction_model = load_model()
-    else:
-        correction_model = None
     h, w = image.shape[:2]
 
-    formatted_model = []
-    if isinstance(model, list):
-        for m in model:
-            if isinstance(m, str):
-                formatted_model.append(get_model(m))
-            else:
-                formatted_model.append(m)
-    else:
-        if isinstance(model, str):
-            formatted_model = [get_model(model)]
-        else:
-            formatted_model = [model]
     start = time.time()
     with torch.inference_mode():
         output = run_model(
-            formatted_model,
+            model,
             image=image,
             device=device,
             scale=pixel_size,
@@ -88,18 +103,17 @@ def inference(
             verbose=verbose,
             prediction_threshold=prediction_threshold,
             low_end_hardware=low_end_hardware,
-        ).argmax(dim=1).byte().squeeze(0).cpu().numpy()
-
+        )
+        output = probas_to_segmentation(
+            output, prediction_threshold=prediction_threshold
+        )
 
     if verbose:
         print("Segmentation time:", time.time() - start)
-    if only_segmentation:
-        return output
+
     with st.spinner("Post-processing segmentation..."):
         start = time.time()
-        output = refine_segmentation(
-            image, output, correction_model=correction_model, device=device
-        )
+        output = refine_segmentation(image, output, device=device)
         if verbose:
             print("Post-processing time:", time.time() - start)
     return output

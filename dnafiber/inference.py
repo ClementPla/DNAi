@@ -11,6 +11,7 @@ from dnafiber.model.autopadDPT import AutoPad
 import kornia as K
 import torch.nn as nn
 import ttach as tta
+import torch.nn as nn
 
 transform = A.Compose(
     [
@@ -55,189 +56,182 @@ def convert_mask_to_image(mask, expand=False):
 
 
 class BridgeGap(nn.Module):
+    """Performs Morphological Closing to bridge gaps without thickening fibers."""
+
     def __init__(self, predictive_threshold=1 / 3):
         super().__init__()
-
         self.register_buffer("kernel", torch.ones((3, 3)))
         self.predictive_threshold = predictive_threshold
 
     def forward(self, probabilities):
-        # Assume channel 0 is background
+        # 0: BG, 1: Red, 2: Green.
+        # We bridge the foreground (1.0 - background)
         background = probabilities[:, 0:1, :, :]
         foreground = 1.0 - background
 
-        # Dilation to bridge gaps
-        bridged_foreground = K.morphology.dilation(foreground, self.kernel)
+        # Closing = Dilation -> Erosion
+        dilated = K.morphology.dilation(foreground, self.kernel)
+        bridged_foreground = K.morphology.erosion(dilated, self.kernel)
 
-        # Thresholding
+        # Apply threshold and update background channel
         mask = (bridged_foreground > self.predictive_threshold).float()
-
-        # Re-assign back to background (inverted)
         probabilities[:, 0:1, :, :] = 1.0 - mask
-        return probabilities
-
-
-class EnsembleModel(nn.Module):
-    def __init__(self, models, weights=None):
-        super().__init__()
-        self.models = nn.ModuleList(models)
-        if weights is None:
-            weights = [1.0 / len(models)] * len(models)
-        self.weights = weights
-        self.softmax = nn.Softmax(dim=1)
-
-    def forward(self, x):
-        outputs = None
-        for i, model in enumerate(self.models):
-            out = self.softmax(model(x))
-            if outputs is None:
-                outputs = out
-            else:
-                outputs += out * self.weights[i]
-        return outputs
+        # Note: Channels 1 and 2 retain their original relative probability
+        # but are now masked by the bridged foreground.
+        return probabilities * mask
 
 
 class SafeTTAWrapper(nn.Module):
-    def __init__(self, model, transforms, merge_mode="mean"):
+    def __init__(self, model, transforms, merge_mode="tsharpen"):
         super().__init__()
         self.model = model
         self.transforms = transforms
         self.merge_mode = merge_mode
 
     def forward(self, x):
-        h, w = x.shape[2], x.shape[3]
-        output_sum = None
+        h, w = x.shape[2:]
+        output_sum = 0
         for transformer in self.transforms:
             augmented = transformer.augment_image(x)
             pred = self.model(augmented)
             deaugmented = transformer.deaugment_mask(pred)
 
-            # Force consistent size after de-augmentation
-            if deaugmented.shape[2] != h or deaugmented.shape[3] != w:
+            if deaugmented.shape[2:] != (h, w):
                 deaugmented = F.interpolate(deaugmented, size=(h, w), mode="bilinear")
 
-            if self.merge_mode == "tsharpen":
-                deaugmented = deaugmented**2
-            if output_sum is None:
-                output_sum = deaugmented
-            else:
-                output_sum += deaugmented
-
-        output_avg = output_sum / len(self.transforms)
-        return output_avg
-
-
-class Inferer(nn.Module):
-    def __init__(
-        self,
-        model,
-        sliding_window_inferer=None,
-        use_tta=False,
-        prediction_threshold=1 / 3,
-    ):
-        super().__init__()
-
-        self.model = AutoPad(
-            nn.Sequential(
-                EnsembleModel(models=model),
-                BridgeGap(prediction_threshold),
-            ),
-            32,
-        )
-        self.model.eval()
-
-        self.sliding_window_inferer = sliding_window_inferer
-
-        if use_tta:
-            transforms = tta.Compose(
-                [
-                    tta.Rotate90(angles=[0, 90]),
-                    tta.Scale(scales=[1, 0.75, 1.25]),
-                ]
+            output_sum += (
+                deaugmented**2 if self.merge_mode == "tsharpen" else deaugmented
             )
-            self.model = SafeTTAWrapper(self.model, transforms, merge_mode="tsharpen")
 
-    def forward(self, image):
-        if self.sliding_window_inferer is not None:
-            output = self.sliding_window_inferer(image, self.model)
-        else:
-            output = self.model(image)
-        return output
+        return output_sum / len(self.transforms)
+
+
+class EnsembleModel(nn.Module):
+    def __init__(self, models):
+        super().__init__()
+        self.models = nn.ModuleList(models)
+
+    def forward(self, x):
+        accumulated_output = 0
+        for model in self.models:
+            accumulated_output += model(x)
+        return accumulated_output / len(self.models)
+
+
+# --- Main Inference Logic ---
 
 
 @torch.inference_mode()
 def run_model(
-    model_input,  # Renamed to avoid confusion with model instances
+    model_input,
     image,
     device,
     scale=0.13,
     use_tta=False,
-    prediction_threshold=1 / 3,
-    verbose=False,
     low_end_hardware=False,
+    verbose=False,
 ):
     device = torch.device(device)
+    model_list = model_input if isinstance(model_input, list) else [model_input]
 
-    # 1. Load Model (only if string)
-    if isinstance(model_input, str):
-        model_instance = _get_model(device=device, revision=model_input)
-    else:
-        model_instance = model_input
-
-    # 2. Setup Scaling
-    model_pixel_size = 0.26
-    # If image is 0.13 and model wants 0.26, scale factor is 0.5
-    rescale_factor = scale / model_pixel_size
-
-    # 3. Preprocess Tensor
-    # transform already handles Normalize + ToTensorV2
+    # 1. Preprocessing & Scaling
     tensor = transform(image=image)["image"].unsqueeze(0)
-    h, w = tensor.shape[2], tensor.shape[3]
+    h_orig, w_orig = tensor.shape[2:]
+    rescale_factor = scale / 0.26
+    input_tensor = F.interpolate(
+        tensor,
+        size=(int(h_orig * rescale_factor), int(w_orig * rescale_factor)),
+        mode="bilinear",
+    )
 
-    # Move to device EARLY to speed up interpolation
+    # 2. Setup Sliding Window
+    sw_inferer = SlidingWindowInferer(
+        roi_size=(1024, 1024),
+        sw_batch_size=2 if low_end_hardware else 4,
+        overlap=0.1,
+        mode="gaussian",
+        sw_device=device,
+        device="cpu" if low_end_hardware else device,
+        progress=verbose,
+    )
+
+    # 3. Execution Strategy
     if not low_end_hardware:
-        tensor = tensor.to(device)
+        # --- SPEED MODE: Parallel Ensemble ---
+        # Load everything once, run SW once
+        loaded_models = []
+        for m_ref in model_list:
+            m = _get_model(revision=m_ref) if isinstance(m_ref, str) else m_ref
+            m = nn.Sequential(m, nn.Softmax(dim=1))
+            loaded_models.append(m)
 
-    # 4. Sliding Window Configuration
-    sliding_window = None
-    if int(h * rescale_factor) > 1024 or int(w * rescale_factor) > 1024:
-        sliding_window = SlidingWindowInferer(
-            roi_size=(512, 512) if low_end_hardware else (1024, 1024),
-            sw_batch_size=1 if low_end_hardware else 4,  # Reduced for stability
-            overlap=0.25,
-            mode="gaussian",
-            sw_device=device,
-            device=torch.device("cpu") if low_end_hardware else device,
-            progress=verbose,
-        )
+        # Build the graph
+        ensemble = EnsembleModel(models=loaded_models).to(device)
+        exec_unit = AutoPad(ensemble, 32)
 
-    # 5. Build Inference Graph
-    inferer = Inferer(
-        model=model_instance,
-        sliding_window_inferer=sliding_window,
-        use_tta=use_tta,
-        prediction_threshold=prediction_threshold,
-    ).to(device)
+        if use_tta:
+            tta_transforms = tta.Compose([tta.Scale(scales=[0.75, 1, 1.25])])
+            exec_unit = SafeTTAWrapper(exec_unit, tta_transforms)
 
-    # 6. Execute with Mixed Precision
-    with torch.autocast(device_type=device.type, enabled=(device.type == "cuda")):
-        # Resize to model's expected physical scale
-        input_tensor = F.interpolate(
-            tensor,
-            size=(int(h * rescale_factor), int(w * rescale_factor)),
-            mode="bilinear",
-            align_corners=False,
-        )
-        if low_end_hardware:
-            input_tensor = input_tensor.to(device=device)
-        probs = inferer(input_tensor)
+        with torch.autocast(device_type=device.type, enabled=(device.type == "cuda")):
+            accumulated_probs = sw_inferer(input_tensor, exec_unit)
 
-        # Resize back to original pixel dimensions
-        probabilities = F.interpolate(
-            probs, size=(h, w), mode="bilinear", align_corners=False
-        )
+    else:
+        # --- MEMORY MODE: Sequential Ensemble ---
+        # (Same as the previous step: load one, run SW, unload, repeat)
+        accumulated_probs = None
+        weight = 1.0 / len(model_list)
 
-    if device.type == "cuda":
-        torch.cuda.empty_cache()
+        for m_ref in model_list:
+            model = _get_model(revision=m_ref) if isinstance(m_ref, str) else m_ref
 
-    return probabilities
+            model = nn.Sequential(model, nn.Softmax(dim=1)).to(device).eval()
+            exec_unit = AutoPad(model, 32)
+
+            if use_tta:
+                exec_unit = SafeTTAWrapper(
+                    exec_unit, tta.Compose([tta.Rotate90(angles=[0, 90])])
+                )
+
+            with torch.autocast(
+                device_type=device.type, enabled=(device.type == "cuda")
+            ):
+                current_output = sw_inferer(input_tensor, exec_unit).to(device)
+                if accumulated_probs is None:
+                    accumulated_probs = current_output * weight
+                else:
+                    accumulated_probs += current_output * weight
+            del model, exec_unit
+            torch.cuda.empty_cache()
+
+    # # 4. Final Post-Processing
+    # post_processor = BridgeGap(prediction_threshold).to(device)
+    # final_probs = post_processor(accumulated_probs)
+
+    return F.interpolate(accumulated_probs, size=(h_orig, w_orig), mode="bilinear")
+
+
+def probas_to_segmentation(probas, prediction_threshold=1 / 3) -> np.ndarray:
+    bg_probs = probas[:, 0:1, :, :]
+    fg_probs = 1.0 - bg_probs
+
+    # Create a mask where fibers are detected
+    # A higher threshold means fewer fibers are detected (higher precision)
+    # A lower threshold means more fibers are detected (higher recall)
+    fiber_mask = (fg_probs >= prediction_threshold).float()
+
+    # Apply mask:
+    # If below threshold, background becomes 1.0, colors become 0.0
+    final_probs = probas.clone()
+    final_probs[:, 0:1, :, :] = torch.where(
+        fiber_mask == 1, bg_probs, torch.ones_like(bg_probs)
+    )
+    final_probs[:, 1:2, :, :] = torch.where(
+        fiber_mask == 1, probas[:, 1:2, :, :], torch.zeros_like(bg_probs)
+    )
+    final_probs[:, 2:3, :, :] = torch.where(
+        fiber_mask == 1, probas[:, 2:3, :, :], torch.zeros_like(bg_probs)
+    )
+
+    # 4. Final Resize back to original pixel dimensions
+    return final_probs.argmax(dim=1).byte().squeeze(0).cpu().numpy()

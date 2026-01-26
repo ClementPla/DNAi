@@ -35,7 +35,7 @@ def upload_to_hub(model, arch, encoder):
     )
 
 
-def _get_model(revision: Models, device="cuda"):
+def _get_model(revision: Models):
     if revision is None:
         model = Trainee.from_pretrained(
             "ClementP/DeepFiberQV3",
@@ -50,13 +50,13 @@ def _get_model(revision: Models, device="cuda"):
             force_download=False,
             encoder_weights=None,
         )
-    return model.eval().to(device)
+    return model.eval().to("cpu")
 
 
-def get_ensemble_models(device="cuda", compile=False):
+def get_ensemble_models(compile=False):
     models = []
     for rev in ENSEMBLE:
-        model = _get_model(revision=rev, device=device)
+        model = _get_model(revision=rev)
         if compile:
             model.compile(dynamic=True)
         models.append(model)

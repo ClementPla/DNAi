@@ -136,7 +136,7 @@ def plot_result(selected_category):
     )
 
 
-def run_one_file(
+def infer(
     file,
     model,
     use_tta=DV.USE_TTA,
@@ -163,10 +163,11 @@ def run_one_file(
     results = ui_inference(
         model,
         image,
-        "cuda" if torch.cuda.is_available() else "cpu",
-        use_tta,
-        prediction_threshold,
+        _device="cuda" if torch.cuda.is_available() else "cpu",
+        use_tta=use_tta,
+        prediction_threshold=prediction_threshold,
         key=inference_id,
+        verbose=True,
         low_end_hardware=low_end_hardware,
     )
     results = results.filtered_copy()
@@ -213,17 +214,16 @@ def run_inference(model_name, use_tta=DV.USE_TTA, use_correction=DV.USE_CORRECTI
         inference_id = build_inference_id(
             file_id,
             model_name,
-            use_tta,
-            prediction_threshold,
+            use_tta=use_tta,
             low_end_hardware=st.session_state.get(
                 "low_end_hardware", DV.LOW_END_HARDWARE
             ),
         )
         try:
-            df = run_one_file(
+            df = infer(
                 file,
                 model,
-                use_tta,
+                use_tta=use_tta,
                 inference_id=inference_id,
                 prediction_threshold=prediction_threshold,
                 low_end_hardware=st.session_state.get(

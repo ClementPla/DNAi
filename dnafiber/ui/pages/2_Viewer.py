@@ -73,12 +73,6 @@ def on_session_start():
             return False
 
 
-def clear_cache():
-    st.cache_data.clear()
-    st.cache_resource.clear()
-    st.success("Cache cleared!")
-
-
 def start_inference(
     image,
     model_name,
@@ -97,13 +91,11 @@ def start_inference(
     else:
         with st.spinner("Loading model..."):
             model = get_model(model_name)
-
     prediction = ui_inference(
-        model,
-        image,
-        "cuda" if torch.cuda.is_available() else "cpu",
+        _model=model,
+        _image=image,
+        _device="cuda" if torch.cuda.is_available() else "cpu",
         use_tta=use_tta,
-        use_correction=False,
         prediction_threshold=prediction_threshold,
         pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
         low_end_hardware=st.session_state.get("low_end_hardware", DV.LOW_END_HARDWARE),
@@ -350,7 +342,6 @@ if on_session_start():
         file_id,
         str(model_name),
         st.session_state.get("use_tta", DV.USE_TTA),
-        st.session_state.get("prediction_threshold", DV.PREDICTION_THRESHOLD),
         st.session_state.get("low_end_hardware", DV.LOW_END_HARDWARE),
     )
     col1, col2, col3 = st.columns([1, 1, 1])

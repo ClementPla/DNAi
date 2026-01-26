@@ -23,8 +23,9 @@ def run_one_file(
     pixel_size=0.13,
     prediction_threshold=1 / 3,
     use_tta=True,
-    use_correction=True,
+    use_correction=False,
     verbose=True,
+    low_end_hardware=False,
 ) -> Fibers:
     start = time.time()
 
@@ -62,6 +63,7 @@ def run_one_file(
         use_tta=use_tta,
         use_correction=use_correction,
         only_segmentation=True,
+        low_end_hardware=low_end_hardware,
         prediction_threshold=prediction_threshold,
         verbose=verbose,
     )

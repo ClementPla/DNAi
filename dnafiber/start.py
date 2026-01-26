@@ -103,8 +103,7 @@ taskkill /IM streamlit.exe /F >nul 2>&1
 timeout /t 2 /nobreak >nul
 echo Updating DNAi from GitHub...
 "{sys.executable}" -m pip install --upgrade --force-reinstall git+https://github.com/ClementPla/DNAi.git
-echo Update complete. Launching...
-DNAI
+echo Update complete. Please restart the application.
 exit
 """)
                 script.close()
@@ -115,12 +114,14 @@ exit
             else:
                 subprocess.Popen(
                     "sleep 2 && pip install --upgrade --upgrade-strategy only-if-needed "
-                    "git+https://github.com/ClementPla/DNAi.git && DNAI",
+                    "git+https://github.com/ClementPla/DNAi.git",
                     shell=True,
                     start_new_session=True,
                 )
 
-            print("Update starting in background. The app will restart automatically.")
+            print(
+                "Update starting in background. You will need to restart the app manually."
+            )
             sys.exit(0)
 
     # Start the Streamlit application
