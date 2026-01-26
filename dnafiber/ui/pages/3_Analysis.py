@@ -184,8 +184,6 @@ def run_inference(model_name, use_tta=DV.USE_TTA, use_correction=DV.USE_CORRECTI
     else:
         with st.spinner("Loading model..."):
             model = get_model(model_name)
-        
-
 
     my_bar = st.progress(0, text="Running segmentation...")
     diag_container = create_diagnostics_container()
@@ -206,6 +204,7 @@ def run_inference(model_name, use_tta=DV.USE_TTA, use_correction=DV.USE_CORRECTI
             reverse_channels=st.session_state.get(
                 "reverse_channels", DV.REVERSE_CHANNELS
             ),
+            clarity=st.session_state.get("clarity", DV.CLARITY),
         )
         prediction_threshold = st.session_state.get(
             "prediction_threshold", DV.PREDICTION_THRESHOLD

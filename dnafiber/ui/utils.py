@@ -27,7 +27,9 @@ def get_model(device, revision=None):
 
 @st.cache_data
 def get_image(_filepath, reverse_channel, id, pixel_size=0.13, clarity=1.0):
-    return load_image(_filepath, reverse_channel, pixel_size=pixel_size, clarity=clarity)
+    return load_image(
+        _filepath, reverse_channel, pixel_size=pixel_size, clarity=clarity
+    )
 
 
 @st.cache_data
@@ -72,8 +74,19 @@ def bokeh_imshow(fig, image):
 
 
 def build_inference_id(
-    file_id, model_name, use_tta, prediction_threshold, low_end_hardware, clarity
+    file_id, model_name, use_tta, prediction_threshold, low_end_hardware
 ) -> str:
+    """_summary_
+
+    Args:
+        file_id (str): A unique identifier for the file, with its parameters.
+        model_name (str): The name or identifier of the model used for inference.
+        use_tta (bool): Whether test-time augmentation is used.
+        prediction_threshold (float): The threshold for making predictions.
+        low_end_hardware (bool): Whether the inference is running on low-end hardware.
+    Returns:
+        str: _description_
+    """
     assert isinstance(file_id, str), "file_id must be a string"
     assert isinstance(model_name, (str, int)), (
         "model_name must be a string or an integer"
@@ -83,13 +96,11 @@ def build_inference_id(
         "prediction_threshold must be a float"
     )
     assert isinstance(low_end_hardware, bool), "low_end_hardware must be a boolean"
-    assert isinstance(clarity, float), "clarity must be a float"
     inference_id = (
         (file_id + f"_{str(model_name)}")
         + ("_use_tta" if use_tta else "_no_tta")
         + f"_{prediction_threshold:.2f}"
         + ("_low_end" if low_end_hardware else "_high_end")
-        + f"_clarity{clarity:.2f}"
     )
     return inference_id
 
@@ -101,7 +112,10 @@ def build_file_id(file, pixel_size, reverse_channels, clarity) -> str:
         file_id = str(hash(file))
 
     file_id = (
-        file_id + f"_{pixel_size}um" + f"_{'rev' if reverse_channels else 'no_rev'}" + f"_clarity{clarity:.2f}"
+        file_id
+        + f"_{pixel_size}um"
+        + f"_{'rev' if reverse_channels else 'no_rev'}"
+        + f"_clarity{clarity:.2f}"
     )
     return file_id
 

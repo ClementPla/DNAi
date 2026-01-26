@@ -97,11 +97,15 @@ def main():
                 script = tempfile.NamedTemporaryFile(
                     mode="w", suffix=".bat", delete=False
                 )
-                script.write("""@echo off
+                script.write(f"""@echo off
+echo Closing existing sessions...
+taskkill /IM streamlit.exe /F >nul 2>&1
 timeout /t 2 /nobreak >nul
-pip install --upgrade --upgrade-strategy only-if-needed git+https://github.com/ClementPla/DNAi.git
-echo Update complete. Restarting...
+echo Updating DNAi from GitHub...
+"{sys.executable}" -m pip install --upgrade --force-reinstall git+https://github.com/ClementPla/DNAi.git
+echo Update complete. Launching...
 DNAI
+exit
 """)
                 script.close()
                 subprocess.Popen(

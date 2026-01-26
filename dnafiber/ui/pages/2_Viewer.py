@@ -25,6 +25,7 @@ from dnafiber.ui.utils import (
 from dnafiber.ui import DefaultValues as DV
 from dnafiber.ui.utils import retain_session_state, create_display_files
 from dnafiber.ui.hardware import sidebar_diagnostics
+
 retain_session_state(st.session_state)
 st.set_page_config(
     layout="wide",
@@ -261,7 +262,7 @@ if on_session_start():
         file,
         pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
         reverse_channels=st.session_state.get("reverse_channels", DV.REVERSE_CHANNELS),
-        clarity=st.session_state.get("clarity", DV.CLARITY)
+        clarity=st.session_state.get("clarity", DV.CLARITY),
     )
     if isinstance(file, tuple):
         if file[0] is None or file[1] is None:
@@ -270,7 +271,11 @@ if on_session_start():
                 f"In this image, {missing} channel is missing. We assume the intended goal is to segment the DNA fibers without differentiation. \
                        Note the model may still predict two classes and try to compute a ratio; these informations can be ignored."
             )
-        image = get_multifile_image(file, clarity=st.session_state.get("clarity", DV.CLARITY), pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE))
+        image = get_multifile_image(
+            file,
+            clarity=st.session_state.get("clarity", DV.CLARITY),
+            pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
+        )
     else:
         image = get_image(
             file,
@@ -345,7 +350,6 @@ if on_session_start():
         st.session_state.get("use_tta", DV.USE_TTA),
         st.session_state.get("prediction_threshold", DV.PREDICTION_THRESHOLD),
         st.session_state.get("low_end_hardware", DV.LOW_END_HARDWARE),
-        st.session_state.get("clarity", DV.CLARITY),
     )
     col1, col2, col3 = st.columns([1, 1, 1])
 
