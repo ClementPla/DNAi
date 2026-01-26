@@ -204,8 +204,6 @@ def run_model(
             del model, exec_unit
             torch.cuda.empty_cache()
 
-    # # 4. Final Post-Processing
-
     return F.interpolate(accumulated_probs, size=(h_orig, w_orig), mode="bilinear")
 
 
