@@ -146,7 +146,7 @@ def run_model(
 
     # 2. Setup Sliding Window
     sw_inferer = SlidingWindowInferer(
-        roi_size=(1024, 1024),
+        roi_size=(1024, 1024) if low_end_hardware else (1536, 1536),
         sw_batch_size=2 if low_end_hardware else 4,
         overlap=0.1,
         mode="gaussian",

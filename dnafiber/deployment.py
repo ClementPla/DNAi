@@ -22,6 +22,7 @@ def run_one_file(
     use_tta=True,
     verbose=True,
     low_end_hardware=False,
+    clarity=1.0,
 ) -> Fibers:
     start = time.time()
 
@@ -38,7 +39,7 @@ def run_one_file(
         image = load_multifile_image(
             file,
             pixel_size=pixel_size,
-            device="cuda" if is_cuda_available else "cpu",
+            clarity=clarity,
         )
     else:
         filename = file.name
@@ -46,7 +47,7 @@ def run_one_file(
             file,
             reverse_channels,
             pixel_size=pixel_size,
-            device="cuda" if is_cuda_available else "cpu",
+            clarity=clarity,
         )
     if verbose:
         print(f"Image loading time: {time.time() - start:.2f} seconds for {filename}")
@@ -57,7 +58,6 @@ def run_one_file(
         pixel_size=pixel_size,
         device="cuda" if is_cuda_available else "cpu",
         use_tta=use_tta,
-        only_segmentation=True,
         low_end_hardware=low_end_hardware,
         prediction_threshold=prediction_threshold,
         verbose=verbose,
@@ -85,7 +85,6 @@ def inference(
             scale=pixel_size,
             use_tta=use_tta,
             verbose=verbose,
-            prediction_threshold=prediction_threshold,
             low_end_hardware=low_end_hardware,
         )
         output = probas_to_segmentation(
