@@ -3,7 +3,6 @@ from dnafiber.inference import run_model, probas_to_segmentation
 from dnafiber.postprocess.core import refine_segmentation
 import numpy as np
 from dnafiber.ui.utils import _get_model
-import torch
 from dnafiber.postprocess.fiber import Fibers
 import time
 

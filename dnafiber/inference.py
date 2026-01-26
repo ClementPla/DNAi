@@ -196,7 +196,7 @@ def run_model(
             with torch.autocast(
                 device_type=device.type, enabled=(device.type == "cuda")
             ):
-                current_output = sw_inferer(input_tensor, exec_unit).to(device)
+                current_output = sw_inferer(input_tensor, exec_unit)
                 if accumulated_probs is None:
                     accumulated_probs = current_output * weight
                 else:
@@ -205,8 +205,6 @@ def run_model(
             torch.cuda.empty_cache()
 
     # # 4. Final Post-Processing
-    # post_processor = BridgeGap(prediction_threshold).to(device)
-    # final_probs = post_processor(accumulated_probs)
 
     return F.interpolate(accumulated_probs, size=(h_orig, w_orig), mode="bilinear")
 
@@ -218,14 +216,10 @@ def probas_to_segmentation(probas, prediction_threshold=1 / 3) -> np.ndarray:
     # fiber_mask is 1 where we want to FORCE a fiber detection
     fiber_mask = fg_probs >= prediction_threshold
 
-    # We create a copy to avoid modifying the original tensor in-place
-    # significantly if it's used elsewhere
-    detection_map = probas.clone()
-
     # LOGIC: If it's a fiber, make background 0 so a color MUST win.
     # If it's NOT a fiber, make background 1 so it MUST win.
-    detection_map[:, 0:1, :, :] = torch.where(fiber_mask, 0.0, 1.0)
+    probas[:, 0:1, :, :] = torch.where(fiber_mask, 0.0, 1.0)
 
     # 4. Argmax + Conversion
     # byte() is fine, but uint8 is the standard for masks
-    return detection_map.argmax(dim=1).byte().squeeze(0).cpu().numpy()
+    return probas.argmax(dim=1).byte().squeeze(0).cpu().numpy()
