@@ -160,10 +160,12 @@ def infer(
             clarity=st.session_state.get("clarity", DV.CLARITY),
         )
         filename = file.name
+    progress_bar = st.progress(0, text=f"Running inference on {filename}...")
     results = ui_inference(
         model,
         image,
         _device="cuda" if torch.cuda.is_available() else "cpu",
+        _progress_bar=progress_bar,
         use_tta=use_tta,
         prediction_threshold=prediction_threshold,
         key=inference_id,

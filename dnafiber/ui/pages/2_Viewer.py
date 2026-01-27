@@ -36,7 +36,7 @@ st.markdown(
     """
         <style>
                .block-container {
-                    padding-top: 2rem;
+                    padding-top: 4rem;
                     padding-bottom: 0rem;
                     padding-left: 5rem;
                     padding-right: 5rem;
@@ -91,10 +91,13 @@ def start_inference(
     else:
         with st.spinner("Loading model..."):
             model = get_model(model_name)
+    progress_bar = st.progress(0, text="Starting inference...")
+    
     prediction = ui_inference(
         _model=model,
         _image=image,
         _device="cuda" if torch.cuda.is_available() else "cpu",
+        _progress_bar=progress_bar,
         use_tta=use_tta,
         prediction_threshold=prediction_threshold,
         pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),

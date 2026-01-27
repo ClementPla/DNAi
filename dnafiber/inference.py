@@ -13,6 +13,7 @@ import torch.nn as nn
 import ttach as tta
 import torch.nn as nn
 
+
 transform = A.Compose(
     [
         A.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)),
@@ -120,7 +121,6 @@ class EnsembleModel(nn.Module):
 
 # --- Main Inference Logic ---
 
-
 @torch.inference_mode()
 def run_model(
     model_input,
@@ -146,7 +146,7 @@ def run_model(
 
     # 2. Setup Sliding Window
     sw_inferer = SlidingWindowInferer(
-        roi_size=(1024, 1024) if low_end_hardware else (1536, 1536),
+        roi_size=(1024, 1024) if low_end_hardware else (1024, 1024),
         sw_batch_size=2 if low_end_hardware else 4,
         overlap=0.1,
         mode="gaussian",
@@ -206,19 +206,18 @@ def run_model(
 
     return F.interpolate(accumulated_probs, size=(h_orig, w_orig), mode="bilinear")
 
-
+@torch.inference_mode()
 def probas_to_segmentation(probas, prediction_threshold=1 / 3) -> np.ndarray:
-    with torch.no_grad():
-        # probas shape: [1, 3, H, W]
-        fg_probs = 1.0 - probas[:, 0:1, :, :]
+    # probas shape: [1, 3, H, W]
+    fg_probs = 1.0 - probas[:, 0:1, :, :]
 
-        # fiber_mask is 1 where we want to FORCE a fiber detection
-        fiber_mask = fg_probs >= prediction_threshold
+    # fiber_mask is 1 where we want to FORCE a fiber detection
+    fiber_mask = fg_probs >= prediction_threshold
 
-        # LOGIC: If it's a fiber, make background 0 so a color MUST win.
-        # If it's NOT a fiber, make background 1 so it MUST win.
-        probas[:, 0:1, :, :] = torch.where(fiber_mask, 0.0, 1.0)
+    # LOGIC: If it's a fiber, make background 0 so a color MUST win.
+    # If it's NOT a fiber, make background 1 so it MUST win.
+    probas[:, 0:1, :, :] = torch.where(fiber_mask, 0.0, 1.0)
 
-        # 4. Argmax + Conversion
-        # byte() is fine, but uint8 is the standard for masks
-        return probas.argmax(dim=1).byte().squeeze(0).cpu().numpy()
+    # 4. Argmax + Conversion
+    # byte() is fine, but uint8 is the standard for masks
+    return probas.argmax(dim=1).byte().squeeze(0).cpu().numpy()
