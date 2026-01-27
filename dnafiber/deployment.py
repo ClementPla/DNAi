@@ -77,16 +77,16 @@ def inference(
     verbose=True,
 ) -> np.ndarray | Fibers:
     start = time.time()
-    with torch.inference_mode():
-        output = run_model(
-            model,
-            image=image,
-            device=device,
-            scale=pixel_size,
-            use_tta=use_tta,
-            verbose=verbose,
-            low_end_hardware=low_end_hardware,
-        )
+    output = run_model(
+        model,
+        image=image,
+        device=device,
+        scale=pixel_size,
+        use_tta=use_tta,
+        verbose=verbose,
+        low_end_hardware=low_end_hardware,
+    )
+    with torch.no_grad():
         output = probas_to_segmentation(
             output, prediction_threshold=prediction_threshold
         )

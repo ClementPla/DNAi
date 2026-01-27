@@ -208,16 +208,17 @@ def run_model(
 
 
 def probas_to_segmentation(probas, prediction_threshold=1 / 3) -> np.ndarray:
-    # probas shape: [1, 3, H, W]
-    fg_probs = 1.0 - probas[:, 0:1, :, :]
+    with torch.no_grad():
+        # probas shape: [1, 3, H, W]
+        fg_probs = 1.0 - probas[:, 0:1, :, :]
 
-    # fiber_mask is 1 where we want to FORCE a fiber detection
-    fiber_mask = fg_probs >= prediction_threshold
+        # fiber_mask is 1 where we want to FORCE a fiber detection
+        fiber_mask = fg_probs >= prediction_threshold
 
-    # LOGIC: If it's a fiber, make background 0 so a color MUST win.
-    # If it's NOT a fiber, make background 1 so it MUST win.
-    probas[:, 0:1, :, :] = torch.where(fiber_mask, 0.0, 1.0)
+        # LOGIC: If it's a fiber, make background 0 so a color MUST win.
+        # If it's NOT a fiber, make background 1 so it MUST win.
+        probas[:, 0:1, :, :] = torch.where(fiber_mask, 0.0, 1.0)
 
-    # 4. Argmax + Conversion
-    # byte() is fine, but uint8 is the standard for masks
-    return probas.argmax(dim=1).byte().squeeze(0).cpu().numpy()
+        # 4. Argmax + Conversion
+        # byte() is fine, but uint8 is the standard for masks
+        return probas.argmax(dim=1).byte().squeeze(0).cpu().numpy()
