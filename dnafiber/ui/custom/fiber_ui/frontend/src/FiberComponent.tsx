@@ -74,7 +74,6 @@ const FlattenedFiber: React.FC<FlattenedFiberProps> = ({
   pixelSize,
   margin,
 }) => {
-  // Parse all segments with their data
   const segments = fiber.points.map((line, i) => {
     const pts = parsePolylinePoints(line)
     const lengthPx = calculatePolylineLength(pts)
@@ -82,18 +81,16 @@ const FlattenedFiber: React.FC<FlattenedFiberProps> = ({
     return { pts, lengthPx, lengthUm, color: fiber.colors[i] }
   })
 
-  // Determine fiber orientation: compare x of first point vs last point
   const firstPt = segments[0]?.pts[0]
   const lastSeg = segments[segments.length - 1]
   const lastPt = lastSeg?.pts[lastSeg.pts.length - 1]
 
-  // If fiber goes right-to-left, reverse the segment order
   const shouldReverse = firstPt && lastPt && firstPt.x > lastPt.x
   const orderedSegments = shouldReverse ? [...segments].reverse() : segments
 
   const totalLengthPx = orderedSegments.reduce((a, s) => a + s.lengthPx, 0)
   const totalLengthUm = orderedSegments.reduce((a, s) => a + s.lengthUm, 0)
-  // Calculate green/red ratio
+
   const isGreen = (color: string) =>
     color.toLowerCase().includes("green") ||
     color === "#00ff00" ||
@@ -112,12 +109,10 @@ const FlattenedFiber: React.FC<FlattenedFiberProps> = ({
     .reduce((a, s) => a + s.lengthUm, 0)
   const ratio = redLength > 0 ? (greenLength / redLength).toFixed(2) : "∞"
 
-  // Use actual fiber length as bar width
   const barWidth = totalLengthPx
   const barHeight = 8
   const fontSize = 8
 
-  // Center the bar under the fiber's bounding box
   const barX = fiber.x + fiber.width / 2 - barWidth / 2
   const barY = fiber.y + fiber.height + margin * 3
 
@@ -125,7 +120,6 @@ const FlattenedFiber: React.FC<FlattenedFiberProps> = ({
 
   return (
     <g className="fiber-flatten" pointerEvents="none">
-      {/* Background */}
       <rect
         x={barX - 4}
         y={barY - 4}
@@ -135,7 +129,6 @@ const FlattenedFiber: React.FC<FlattenedFiberProps> = ({
         rx={4}
       />
 
-      {/* Colored segments */}
       {orderedSegments.map((seg, i) => {
         const segWidth = seg.lengthPx
         const x = currentX
@@ -175,7 +168,6 @@ const FlattenedFiber: React.FC<FlattenedFiberProps> = ({
         )
       })}
 
-      {/* Total length and ratio label */}
       <text
         x={barX + barWidth / 2}
         y={barY + barHeight + 12}
@@ -198,9 +190,9 @@ const FlattenedFiber: React.FC<FlattenedFiberProps> = ({
 const engine = new Styletron()
 
 function getScaleInfo(
-  pixelSize: number, // um per image pixel
-  currentScale: number, // multiplier from react-zoom-pan-pinch
-  baseScale: number // screen pixels per viewBox unit at zoom 1.0
+  pixelSize: number,
+  currentScale: number,
+  baseScale: number
 ) {
   const actualScreenPixelsPerUnit = baseScale * currentScale
   const micronsPerScreenPixel = pixelSize / actualScreenPixelsPerUnit
@@ -217,6 +209,9 @@ function getScaleInfo(
 
   return { barPx, label }
 }
+
+// Inspection delay in ms
+const INSPECTION_DELAY = 600
 
 function FiberComponent(
   this: any,
@@ -236,15 +231,19 @@ function FiberComponent(
   const [hoveredFiberId, setHoveredFiberId] = useState<number | null>(null)
   const transformRef = useRef<ReactZoomPanPinchRef | null>(null)
 
+  // New: inspection tracking
+  const [inspectedFibers, setInspectedFibers] = useState<Set<number>>(new Set())
+  const [hideInspected, setHideInspected] = useState(false)
+  const hoverTimerRef = useRef<NodeJS.Timeout | null>(null)
+
   // Fixed heights in pixels
   const TOOLBAR_HEIGHT = 56
   const VIEWER_HEIGHT = 650
 
-  // Tell Streamlit the exact height
   useEffect(() => {
     Streamlit.setFrameHeight(TOOLBAR_HEIGHT + VIEWER_HEIGHT + 32)
   }, [])
-  // SVG fills width, height based on aspect ratio but capped
+
   const svgWidth = width
   const svgHeight = Math.min(VIEWER_HEIGHT, width * (image_h / image_w))
   const scaleX = width / image_w
@@ -266,7 +265,6 @@ function FiberComponent(
   const [strokeScale, setstrokeScaleValue] = useState([1])
   const themeMode = theme?.base === "dark" ? LightTheme : DarkTheme
 
-  // Scale bar info
   const { barPx, label } = getScaleInfo(pixel_size, currentScale, fitScale)
   const fontSize = "12px"
   const buttonOverrides = {
@@ -281,10 +279,148 @@ function FiberComponent(
     },
   }
 
+  // Ref for the focusable container
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  // Focus the container on mount and when clicking anywhere in it
+  useEffect(() => {
+    // Small delay to ensure iframe is ready
+    const timer = setTimeout(() => {
+      containerRef.current?.focus()
+    }, 100)
+    return () => clearTimeout(timer)
+  }, [])
+
+  const handleContainerClick = useCallback(() => {
+    containerRef.current?.focus()
+  }, [])
+
+  // Mark fiber as inspected after hover delay
+  const handleFiberMouseEnter = useCallback((fiberId: number) => {
+    setHoveredFiberId(fiberId)
+
+    // Start timer to mark as inspected
+    hoverTimerRef.current = setTimeout(() => {
+      setInspectedFibers((prev) => new Set(prev).add(fiberId))
+    }, INSPECTION_DELAY)
+  }, [])
+
+  const handleFiberMouseLeave = useCallback(() => {
+    setHoveredFiberId(null)
+
+    // Cancel pending inspection
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current)
+      hoverTimerRef.current = null
+    }
+  }, [])
+
+  // Click also marks as inspected immediately
+  const handleFiberClick = useCallback((fiberId: number) => {
+    setInspectedFibers((prev) => new Set(prev).add(fiberId))
+    setSelectedFibers((prev) =>
+      prev.includes(fiberId)
+        ? prev.filter((i) => i !== fiberId)
+        : [...prev, fiberId]
+    )
+  }, [])
+  const navigateToNextUninspected = useCallback(() => {
+    const uninspected = elements.find(
+      (el: Fiber) => !inspectedFibers.has(el.fiber_id)
+    )
+    if (!uninspected || !transformRef.current) return
+
+    inspectedFibers.add(uninspected.fiber_id)
+    setInspectedFibers(new Set(inspectedFibers))
+
+    const fiberVBX = uninspected.x + uninspected.width / 2
+    const fiberVBY = uninspected.y + uninspected.height / 2
+
+    const scaleX = svgWidth / image_w
+    const scaleY = svgHeight / image_h
+    const actualScale = Math.min(scaleX, scaleY)
+
+    const renderedWidth = image_w * actualScale
+    const renderedHeight = image_h * actualScale
+
+    const svgInternalOffsetX = (svgWidth - renderedWidth) / 2
+    const svgInternalOffsetY = (svgHeight - renderedHeight) / 2
+
+    const fiberInSvgX = svgInternalOffsetX + fiberVBX * actualScale
+    const fiberInSvgY = svgInternalOffsetY + fiberVBY * actualScale
+
+    const contentOffsetX = (width - svgWidth) / 2
+    const contentOffsetY = (VIEWER_HEIGHT - svgHeight) / 2
+
+    const fiberContentX = contentOffsetX + fiberInSvgX
+    const fiberContentY = contentOffsetY + fiberInSvgY
+
+    const targetScale = 10
+    const vpCenterX = width / 2
+    const vpCenterY = VIEWER_HEIGHT / 2
+
+    const newX = vpCenterX - fiberContentX * targetScale
+    const newY = vpCenterY - fiberContentY * targetScale
+
+    transformRef.current.setTransform(newX, newY, targetScale, 300)
+  }, [elements, inspectedFibers, width, svgWidth, svgHeight, image_w, image_h])
+
+  // Filter elements based on hideInspected
+  const visibleElements = useMemo(() => {
+    if (!hideInspected) return elements
+    return elements.filter(
+      (el: Fiber) =>
+        !inspectedFibers.has(el.fiber_id) ||
+        selectedFibers.includes(el.fiber_id)
+    )
+  }, [elements, hideInspected, inspectedFibers, selectedFibers])
+
+  // Progress stats
+  const inspectedCount = inspectedFibers.size
+  const totalCount = elements.length
+  const progressPercent =
+    totalCount > 0 ? (inspectedCount / totalCount) * 100 : 0
+
   return (
     <StyletronProvider value={engine}>
       <BaseProvider theme={themeMode}>
-        <div style={{ width: "100%" }}>
+        <div
+          ref={containerRef}
+          tabIndex={0}
+          onClick={handleContainerClick}
+          onKeyDown={(e) => {
+            // Handle keyboard events here instead of window listener
+            if (e.target instanceof HTMLInputElement) return
+
+            switch (e.key.toLowerCase()) {
+              case "t":
+                setShowOnlyPolylines((prev) => !prev)
+                break
+              case "n":
+                navigateToNextUninspected()
+                break
+              case "h":
+                setHideInspected((prev) => !prev)
+                break
+              case "e":
+                if (hoveredFiberId !== null) {
+                  handleFiberClick(hoveredFiberId)
+                }
+                break
+              case "i":
+                if (hoveredFiberId !== null) {
+                  setInspectedFibers((prev) =>
+                    new Set(prev).add(hoveredFiberId)
+                  )
+                }
+                break
+            }
+          }}
+          style={{
+            width: "100%",
+            outline: "none",
+          }}
+        >
           {/* Toolbar */}
           <div
             style={{
@@ -356,22 +492,97 @@ function FiberComponent(
               />
             </span>
 
-            <span style={{ fontSize: fontSize }}>{elements.length} fibers</span>
+            {/* Inspection controls */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                borderLeft: "1px solid rgba(255,255,255,0.2)",
+                paddingLeft: 8,
+                marginLeft: 4,
+              }}
+            >
+              <Button
+                size="compact"
+                overrides={buttonOverrides}
+                onClick={navigateToNextUninspected}
+                disabled={inspectedCount >= totalCount}
+              >
+                Next (N)
+              </Button>
 
-            <Button
-              size="compact"
-              overrides={buttonOverrides}
-              onClick={() => setSelectedFibers([])}
+              <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                <Switch.Root
+                  checked={hideInspected}
+                  onCheckedChange={setHideInspected}
+                  className={switch_styles.Switch}
+                >
+                  <Switch.Thumb className={switch_styles.Thumb} />
+                </Switch.Root>
+                <span style={{ fontSize: fontSize }}>Hide inspected (H)</span>
+              </div>
+
+              {/* Progress indicator */}
+              <div
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 2,
+                  minWidth: 80,
+                }}
+              >
+                <span style={{ fontSize: "10px", opacity: 0.8 }}>
+                  {inspectedCount}/{totalCount} inspected
+                </span>
+                <div
+                  style={{
+                    width: "100%",
+                    height: 4,
+                    backgroundColor: "rgba(255,255,255,0.2)",
+                    borderRadius: 2,
+                    overflow: "hidden",
+                  }}
+                >
+                  <div
+                    style={{
+                      width: `${progressPercent}%`,
+                      height: "100%",
+                      backgroundColor: "#4CAF50",
+                      transition: "width 0.2s ease",
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                borderLeft: "1px solid rgba(255,255,255,0.2)",
+                paddingLeft: 8,
+                marginLeft: 4,
+                display: "flex",
+                gap: 4,
+              }}
             >
-              Clear
-            </Button>
-            <Button
-              size="compact"
-              overrides={buttonOverrides}
-              onClick={() => Streamlit.setComponentValue(selectedFibers)}
-            >
-              Send ({selectedFibers.length})
-            </Button>
+              <Button
+                size="compact"
+                overrides={buttonOverrides}
+                onClick={() => {
+                  setSelectedFibers([])
+                  setInspectedFibers(new Set())
+                }}
+              >
+                Reset All
+              </Button>
+              <Button
+                size="compact"
+                overrides={buttonOverrides}
+                onClick={() => Streamlit.setComponentValue(selectedFibers)}
+              >
+                Send ({selectedFibers.length})
+              </Button>
+            </div>
           </div>
 
           {/* Viewer container */}
@@ -395,6 +606,9 @@ function FiberComponent(
               wheel={{ smoothStep: 0.01, step: 0.5 }}
               onTransformed={handleTransform}
               onInit={(ref) => setCurrentScale(ref.state.scale)}
+              limitToBounds={false}
+              centerZoomedOut={false}
+              alignmentAnimation={{ disabled: true }}
             >
               <TransformComponent
                 wrapperStyle={{ width: "100%", height: "100%" }}
@@ -413,6 +627,12 @@ function FiberComponent(
                   preserveAspectRatio="xMidYMid meet"
                   style={{
                     backgroundColor: DarkTheme.colors.backgroundPrimary,
+                    // Override problematic CSS:
+                    margin: 0,
+                    minHeight: "unset",
+                    maxHeight: "unset",
+                    aspectRatio: "unset",
+                    border: "none",
                   }}
                 >
                   <image
@@ -422,88 +642,119 @@ function FiberComponent(
                     className={`image ${showOnlyPolylines ? "hidden" : ""}`}
                   />
 
-                  {elements.map((el: Fiber, idx: number) => (
-                    <g key={idx} className="rect-group">
-                      <rect
-                        x={el.x - margin}
-                        y={el.y - margin}
-                        width={el.width + margin * 2}
-                        height={el.height + margin * 2}
-                        fill="none"
-                        stroke={el.is_error ? "red" : "white"}
-                        strokeWidth={default_radius * strokeScale[0]}
-                        className={`hover-target ${showOnlyPolylines || hideBbox ? "hidden" : ""}`}
-                        rx={default_radius}
-                        onMouseEnter={() => setHoveredFiberId(el.fiber_id)}
-                        onMouseLeave={() => setHoveredFiberId(null)}
-                        onClick={() => {
-                          setSelectedFibers((prev) =>
-                            prev.includes(el.fiber_id)
-                              ? prev.filter((i) => i !== el.fiber_id)
-                              : [...prev, el.fiber_id]
-                          )
-                        }}
-                      >
-                        <title>
-                          Fiber id: {el.fiber_id.toFixed(0)}, Ratio:{" "}
-                          {el.ratio.toFixed(2)}
-                        </title>
-                      </rect>
+                  {visibleElements.map((el: Fiber, idx: number) => {
+                    const isInspected = inspectedFibers.has(el.fiber_id)
+                    const isSelected = selectedFibers.includes(el.fiber_id)
 
-                      {selectedFibers.includes(el.fiber_id) && (
+                    // Visual distinction for inspection state
+                    const bboxOpacity = isInspected && !isSelected ? 0.85 : 1.0
+                    const bboxStroke = isSelected
+                      ? "blue"
+                      : el.is_error
+                        ? "red"
+                        : isInspected
+                          ? "gray"
+                          : "white"
+
+                    return (
+                      <g
+                        key={idx}
+                        className="rect-group"
+                        opacity={
+                          isInspected && !isSelected && !hideInspected
+                            ? 0.95
+                            : 1
+                        }
+                      >
                         <rect
                           x={el.x - margin}
                           y={el.y - margin}
                           width={el.width + margin * 2}
                           height={el.height + margin * 2}
                           fill="none"
-                          stroke="blue"
-                          strokeWidth={default_radius * strokeScale[0] * 1.5}
+                          stroke={bboxStroke}
+                          strokeWidth={default_radius * strokeScale[0]}
+                          opacity={bboxOpacity}
+                          className={`hover-target ${showOnlyPolylines || hideBbox ? "hidden" : ""}`}
                           rx={default_radius}
-                          pointerEvents="none"
-                        />
-                      )}
+                          onMouseEnter={() =>
+                            handleFiberMouseEnter(el.fiber_id)
+                          }
+                          onMouseLeave={handleFiberMouseLeave}
+                          onClick={() => handleFiberClick(el.fiber_id)}
+                        >
+                          <title>
+                            Fiber id: {el.fiber_id.toFixed(0)}, Ratio:{" "}
+                            {el.ratio.toFixed(2)}
+                            {isInspected ? " ✓" : ""}
+                          </title>
+                        </rect>
 
-                      <g className="hover-paths">
-                        {el.points.map((line: string, line_idx: number) => (
-                          <React.Fragment key={`${line_idx}_${idx}`}>
-                            {/* 1. The "Halo" / Background Stroke */}
-                            <polyline
-                              className={
-                                animated ? "fibers-animated" : "fibers"
-                              }
-                              points={line}
-                              fill="none"
-                              stroke="white" // or "white" depending on your image brightness
-                              strokeWidth={
-                                default_radius * strokeScale[0] * 1.8
-                              } // 80% thicker
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              opacity={
-                                showOnlyPolylines || hideBbox ? 1.0 : 0.0
-                              }
-                            />
-                            {/* 2. The Actual Colored Fiber */}
-                            <polyline
-                              className={
-                                animated ? "fibers-animated" : "fibers"
-                              }
-                              points={line}
-                              fill="none"
-                              stroke={el.colors[line_idx]}
-                              strokeWidth={default_radius * strokeScale[0]}
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              opacity={
-                                showOnlyPolylines || hideBbox ? 1.0 : 0.0
-                              }
-                            />
-                          </React.Fragment>
-                        ))}
+                        {isSelected && (
+                          <rect
+                            x={el.x - margin}
+                            y={el.y - margin}
+                            width={el.width + margin * 2}
+                            height={el.height + margin * 2}
+                            fill="none"
+                            stroke="blue"
+                            strokeWidth={default_radius * strokeScale[0] * 1.5}
+                            rx={default_radius}
+                            pointerEvents="none"
+                          />
+                        )}
+
+                        {/* Small checkmark for inspected fibers */}
+                        {isInspected && !hideBbox && !showOnlyPolylines && (
+                          <circle
+                            cx={el.x + el.width + margin}
+                            cy={el.y - margin}
+                            r={default_radius * 3}
+                            fill={isSelected ? "blue" : "#4CAF50"}
+                            pointerEvents="none"
+                          />
+                        )}
+
+                        <g className="hover-paths">
+                          {el.points.map((line: string, line_idx: number) => (
+                            <React.Fragment key={`${line_idx}_${idx}`}>
+                              <polyline
+                                className={
+                                  animated ? "fibers-animated" : "fibers"
+                                }
+                                points={line}
+                                fill="none"
+                                stroke="white"
+                                strokeWidth={
+                                  default_radius * strokeScale[0] * 1.8
+                                }
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                opacity={
+                                  showOnlyPolylines || hideBbox ? 1.0 : 0.0
+                                }
+                              />
+                              <polyline
+                                className={
+                                  animated ? "fibers-animated" : "fibers"
+                                }
+                                points={line}
+                                fill="none"
+                                stroke={el.colors[line_idx]}
+                                strokeWidth={default_radius * strokeScale[0]}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                opacity={
+                                  showOnlyPolylines || hideBbox ? 1.0 : 0.0
+                                }
+                              />
+                            </React.Fragment>
+                          ))}
+                        </g>
                       </g>
-                    </g>
-                  ))}
+                    )
+                  })}
+
                   {hoveredFiberId !== null &&
                     (() => {
                       const hoveredFiber = elements.find(
@@ -521,7 +772,7 @@ function FiberComponent(
               </TransformComponent>
             </TransformWrapper>
 
-            {/* Scale ruler - absolute positioned, fixed size */}
+            {/* Scale ruler */}
             <div
               style={{
                 position: "absolute",
@@ -555,7 +806,6 @@ function FiberComponent(
                   position: "relative",
                 }}
               >
-                {/* Left tick */}
                 <div
                   style={{
                     position: "absolute",
@@ -566,7 +816,6 @@ function FiberComponent(
                     background: "white",
                   }}
                 />
-                {/* Right tick */}
                 <div
                   style={{
                     position: "absolute",
@@ -577,6 +826,37 @@ function FiberComponent(
                     background: "white",
                   }}
                 />
+              </div>
+            </div>
+
+            {/* Keyboard shortcuts help */}
+            <div
+              style={{
+                position: "absolute",
+                bottom: 16,
+                right: 16,
+                background: "rgba(0,0,0,0.8)",
+                padding: 8,
+                borderRadius: 6,
+                fontSize: 10,
+                color: "rgba(255,255,255,0.7)",
+                fontFamily: "system-ui",
+              }}
+            >
+              <div>
+                <kbd>T</kbd> Toggle image
+              </div>
+              <div>
+                <kbd>N</kbd> Next uninspected
+              </div>
+              <div>
+                <kbd>H</kbd> Hide inspected
+              </div>
+              <div>
+                <kbd>E</kbd> Mark as error
+              </div>
+              <div>
+                <kbd>I</kbd> Mark inspected
               </div>
             </div>
           </div>
