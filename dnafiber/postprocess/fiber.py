@@ -50,7 +50,9 @@ class Bbox:
 @attrs.define
 class FiberProps:
     bbox: Bbox
-    data: np.ndarray
+    data: (
+        np.ndarray
+    )  # 2D array representing the fiber pixels (0: background, 1: red, 2: green)
     fiber_id: int = -1
     red_pixels: int = None
     green_pixels: int = None

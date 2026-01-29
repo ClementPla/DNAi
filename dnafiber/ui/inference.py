@@ -11,15 +11,10 @@ import monai.inferers.utils as monai_utils
 import tqdm
 
 
-
-
-
 import monai.inferers.utils as monai_utils
 
 # Store original at module load
 _original_monai_tqdm = monai_utils.tqdm
-
-
 
 
 @st.cache_data(show_spinner="Running predictions...")
@@ -27,7 +22,6 @@ def ui_inference(
     _model,
     _image,
     _device,
-    _progress_bar=None,
     use_tta=True,
     pixel_size=0.13,
     prediction_threshold=1 / 3,
@@ -35,36 +29,43 @@ def ui_inference(
     verbose=True,
     key="default",
 ) -> np.ndarray | Fibers:
+    progress_bar = st.progress(0, text="Starting inference...")
+
     start = time.time()
+
     class StreamlitTqdm:
         """A tqdm-like class that updates a Streamlit progress bar."""
-        
+
         def __init__(self, iterable=None, total=None, desc=None, **kwargs):
             self.iterable = iterable
-            self.total = total or (len(iterable) if hasattr(iterable, '__len__') else None)
+            self.total = total or (
+                len(iterable) if hasattr(iterable, "__len__") else None
+            )
             self.desc = desc or "Processing"
             self.n = 0
-        
+
         def __iter__(self):
             for item in self.iterable:
                 yield item
                 self.update(1)
             self.close()
-        
+
         def update(self, n=1):
             self.n += n
             if self.total:
-                _progress_bar.progress(self.n / self.total, text=f"{self.desc}: {self.n}/{self.total}")
-        
+                progress_bar.progress(
+                    self.n / self.total, text=f"{self.desc}: {self.n}/{self.total}"
+                )
+
         def close(self):
-            _progress_bar.empty()
-        
+            progress_bar.empty()
+
         def __enter__(self):
             return self
-        
+
         def __exit__(self, *args):
             self.close()
-    
+
     @contextmanager
     def streamlit_tqdm():
         """Redirect MONAI's tqdm to Streamlit progress bar."""
@@ -73,7 +74,7 @@ def ui_inference(
             yield
         finally:
             monai_utils.tqdm = _original_monai_tqdm
-            
+
     with streamlit_tqdm():
         probas = ui_exec_model(
             _model,
@@ -110,7 +111,6 @@ def ui_exec_model(
     low_end_hardware=False,
     key="default",
 ):
-
     return run_model(
         _model,
         image=_image,

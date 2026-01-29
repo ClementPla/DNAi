@@ -5,7 +5,6 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
-from dnafiber.data.utils import numpy_to_base64_png
 from dnafiber.postprocess.fiber import Fibers
 
 
@@ -31,7 +30,7 @@ def show_fibers_cacheless(_prediction, _image, resolution=400, show_errors=True)
         secondAnalog=[],
         ratio=[],
         fiber_type=[],
-        visualization=[],
+        # visualization=[],
         is_valid=[],
     )
 
@@ -48,70 +47,70 @@ def show_fibers_cacheless(_prediction, _image, resolution=400, show_errors=True)
         data["fiber_type"].append(fiber.fiber_type)
         data["is_valid"].append(fiber.is_acceptable)
 
-        x, y, w, h = fiber.bbox
+        # x, y, w, h = fiber.bbox
 
-        # Offset by half the height and width the x, y coordinates to have a larger visualization
-        xextract1 = max(0, x - math.floor(w / 2))
-        yextract1 = max(0, y - math.floor(h / 2))
-        xextract2 = min(_image.shape[1], x + w + math.floor(w / 2))
-        yextract2 = min(_image.shape[0], y + h + math.floor(h / 2))
-        visu = _image[
-            max(0, yextract1) : min(_image.shape[0], yextract2),
-            max(0, xextract1) : min(_image.shape[1], xextract2),
-        ]
+        # # Offset by half the height and width the x, y coordinates to have a larger visualization
+        # xextract1 = max(0, x - math.floor(w / 2))
+        # yextract1 = max(0, y - math.floor(h / 2))
+        # xextract2 = min(_image.shape[1], x + w + math.floor(w / 2))
+        # yextract2 = min(_image.shape[0], y + h + math.floor(h / 2))
+        # visu = _image[
+        #     max(0, yextract1) : min(_image.shape[0], yextract2),
+        #     max(0, xextract1) : min(_image.shape[1], xextract2),
+        # ]
 
-        rect_coordinates = (x - xextract1, y - yextract1, w, h)
+        # rect_coordinates = (x - xextract1, y - yextract1, w, h)
 
-        visu = cv2.normalize(visu, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
-        # Draw the bbox on the visualization
-        # Scale the visualization to a minimum width or height of `resolution` pixels
+        # visu = cv2.normalize(visu, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+        # # Draw the bbox on the visualization
+        # # Scale the visualization to a minimum width or height of `resolution` pixels
 
-        max_dim = max(visu.shape[0], visu.shape[1])
-        if max_dim < resolution:
-            scale = resolution / max_dim
-            visu = cv2.resize(
-                visu,
-                None,
-                fx=scale,
-                fy=scale,
-                interpolation=cv2.INTER_LINEAR,
-            )
+        # max_dim = max(visu.shape[0], visu.shape[1])
+        # if max_dim < resolution:
+        #     scale = resolution / max_dim
+        #     visu = cv2.resize(
+        #         visu,
+        #         None,
+        #         fx=scale,
+        #         fy=scale,
+        #         interpolation=cv2.INTER_LINEAR,
+        #     )
 
-            # Scale the rectangle coordinates as well
-            rect_coordinates = (
-                math.floor(rect_coordinates[0] * scale),
-                math.floor(rect_coordinates[1] * scale),
-                math.floor(rect_coordinates[2] * scale),
-                math.floor(rect_coordinates[3] * scale),
-            )
+        #     # Scale the rectangle coordinates as well
+        #     rect_coordinates = (
+        #         math.floor(rect_coordinates[0] * scale),
+        #         math.floor(rect_coordinates[1] * scale),
+        #         math.floor(rect_coordinates[2] * scale),
+        #         math.floor(rect_coordinates[3] * scale),
+        #     )
 
-        cv2.rectangle(
-            visu,
-            (rect_coordinates[0], rect_coordinates[1]),
-            (
-                rect_coordinates[0] + rect_coordinates[2],
-                rect_coordinates[1] + rect_coordinates[3],
-            ),
-            (0, 0, 255),
-            3,
-        )
+        # cv2.rectangle(
+        #     visu,
+        #     (rect_coordinates[0], rect_coordinates[1]),
+        #     (
+        #         rect_coordinates[0] + rect_coordinates[2],
+        #         rect_coordinates[1] + rect_coordinates[3],
+        #     ),
+        #     (0, 0, 255),
+        #     3,
+        # )
 
-        # Draw a rectangle around the fiber, without the offset
+        # # Draw a rectangle around the fiber, without the offset
 
-        # Pad the visualization to have a square image
-        if visu.shape[0] < visu.shape[1]:
-            pad = (visu.shape[1] - visu.shape[0]) // 2
-            visu = cv2.copyMakeBorder(
-                visu, pad, pad, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0)
-            )
-        elif visu.shape[0] > visu.shape[1]:
-            pad = (visu.shape[0] - visu.shape[1]) // 2
-            visu = cv2.copyMakeBorder(
-                visu, 0, 0, pad, pad, cv2.BORDER_CONSTANT, value=(0, 0, 0)
-            )
+        # # Pad the visualization to have a square image
+        # if visu.shape[0] < visu.shape[1]:
+        #     pad = (visu.shape[1] - visu.shape[0]) // 2
+        #     visu = cv2.copyMakeBorder(
+        #         visu, pad, pad, 0, 0, cv2.BORDER_CONSTANT, value=(0, 0, 0)
+        #     )
+        # elif visu.shape[0] > visu.shape[1]:
+        #     pad = (visu.shape[0] - visu.shape[1]) // 2
+        #     visu = cv2.copyMakeBorder(
+        #         visu, 0, 0, pad, pad, cv2.BORDER_CONSTANT, value=(0, 0, 0)
+        #     )
 
-        # Make sure the
-        data["visualization"].append(visu)
+        # # Make sure the
+        # data["visualization"].append(visu)
 
     df = pd.DataFrame(data)
     df = df.rename(
@@ -121,10 +120,10 @@ def show_fibers_cacheless(_prediction, _image, resolution=400, show_errors=True)
             "ratio": "Ratio",
             "fiber_type": "Fiber type",
             "fiber_id": "Fiber ID",
-            "visualization": "Visualization",
+            # "visualization": "Visualization",
         }
     )
-    df["Visualization"] = df["Visualization"].apply(lambda x: numpy_to_base64_png(x))
+    # df["Visualization"] = df["Visualization"].apply(lambda x: numpy_to_base64_png(x))
     return df
 
 
@@ -134,12 +133,12 @@ def table_components(df):
         on_select="rerun",
         selection_mode="multi-row",
         use_container_width=True,
-        column_config={
-            "Visualization": st.column_config.ImageColumn(
-                "Visualization",
-                help="Visualization of the fiber",
-            )
-        },
+        # column_config={
+        #     "Visualization": st.column_config.ImageColumn(
+        #         "Visualization",
+        #         help="Visualization of the fiber",
+        #     )
+        # },
     )
 
     rows = event["selection"]["rows"]

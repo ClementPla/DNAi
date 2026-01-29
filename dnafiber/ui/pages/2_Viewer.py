@@ -13,6 +13,7 @@ from dnafiber.ui.components import (
     distribution_analysis,
     viewer_components,
 )
+from dnafiber.ui.mosaic import mosaic
 from dnafiber.ui.custom.fiber_ui import fiber_ui
 from dnafiber.ui.inference import get_model, ui_inference
 from dnafiber.ui.utils import (
@@ -91,13 +92,11 @@ def start_inference(
     else:
         with st.spinner("Loading model..."):
             model = get_model(model_name)
-    progress_bar = st.progress(0, text="Starting inference...")
-    
+
     prediction = ui_inference(
         _model=model,
         _image=image,
         _device="cuda" if torch.cuda.is_available() else "cpu",
-        _progress_bar=progress_bar,
         use_tta=use_tta,
         prediction_threshold=prediction_threshold,
         pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
@@ -105,8 +104,8 @@ def start_inference(
         key=inference_id,
     )
     prediction = prediction.valid_copy()
-    tab_viewer, tab_fibers, tab_distributions = st.tabs(
-        ["Viewer", "Fibers", "Distribution"]
+    tab_viewer, tab_mosaic, tab_table, tab_distributions = st.tabs(
+        ["Viewer", "Mosaic", "Table", "Distribution"]
     )
 
     with tab_viewer:
@@ -117,12 +116,13 @@ def start_inference(
                 f"Images are displayed at a lower resolution of {max_size} pixel wide"
             )
         start = time.time()
+
         rescaled_image, scale = viewer_components(image, prediction, inference_id)
         start = time.time()
         selected_fibers = fiber_ui(
-            rescaled_image,
+            image,
             prediction.svgs(
-                scale=scale,
+                scale=1,
                 color1=st.session_state.get("color1", "red"),
                 color2=st.session_state.get("color2", "green"),
             ),
@@ -132,8 +132,30 @@ def start_inference(
     for fiber in prediction:
         if fiber.fiber_id in selected_fibers:
             fiber.is_an_error = True
+    with tab_mosaic:
+        prediction_mosaic, image_mosaic = mosaic(
+            prediction,
+            image,
+            downsample=(max_dim // max_size + 1 if max_dim > max_size else 1),
+            padding=10,
+            allow_rotation=False,
+            context_margin=0.1,
+        )
+        selected_fibers = fiber_ui(
+            image_mosaic,
+            prediction_mosaic.svgs(
+                scale=1,
+                color1=st.session_state.get("color1", "red"),
+                color2=st.session_state.get("color2", "green"),
+            ),
+            pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
+            key=inference_id + "_mosaic",
+        )
+    for fiber in prediction:
+        if fiber.fiber_id in selected_fibers:
+            fiber.is_an_error = True
 
-    with tab_fibers:
+    with tab_table:
         if len(prediction) == 0:
             st.warning("No fibers detected in this image.")
         else:
@@ -144,7 +166,8 @@ def start_inference(
             )
             for idx in df.index:
                 if df.at[idx, "Fiber ID"] in selected_fibers:
-                    df.at[idx, "is_valid"] = ~df.at[idx, "is_valid"]
+                    df.at[idx, "is_valid"] = False
+
             table_components(df)
             st.write(
                 f"Column is_valid of the selected fibers (ids: {', '.join(map(str, selected_fibers))}) were manually switched."
