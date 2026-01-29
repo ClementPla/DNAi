@@ -10,6 +10,8 @@ from dnafiber.postprocess.fiber import Fibers
 
 import plotly.express as px
 
+from dnafiber.ui.mosaic import mosaic
+
 
 @st.cache_data
 def show_fibers(
@@ -280,3 +282,16 @@ def viewer_components(_image, _prediction, inference_id):
             )
 
         return image, scale
+
+
+@st.cache_data(show_spinner="Setting up mosaic...", max_entries=5)
+def get_mosaic(_image, _prediction, inference_id):
+    prediction_mosaic, image_mosaic = mosaic(
+        _prediction,
+        _image,
+        downsample=1,
+        padding=50,
+        allow_rotation=False,
+        context_margin=0.25,
+    )
+    return prediction_mosaic, image_mosaic

@@ -8,6 +8,7 @@ import time
 
 from dnafiber.model.models_zoo import MODELS_ZOO, MODELS_ZOO_R, ENSEMBLE, Models
 from dnafiber.ui.components import (
+    get_mosaic,
     show_fibers,
     table_components,
     distribution_analysis,
@@ -120,7 +121,7 @@ def start_inference(
 
         rescaled_image, scale = viewer_components(image, prediction, inference_id)
         start = time.time()
-        selected_fibers = fiber_ui(
+        selected_fibers_img = fiber_ui(
             rescaled_image,
             prediction.svgs(
                 scale=scale,
@@ -131,17 +132,10 @@ def start_inference(
             key=inference_id,
         )
     for fiber in prediction:
-        if fiber.fiber_id in selected_fibers:
+        if fiber.fiber_id in selected_fibers_img:
             fiber.is_an_error = True
     with tab_mosaic:
-        prediction_mosaic, image_mosaic = mosaic(
-            prediction,
-            image,
-            downsample=1,
-            padding=50,
-            allow_rotation=False,
-            context_margin=0.1,
-        )
+        prediction_mosaic, image_mosaic = get_mosaic(image, prediction, inference_id)
         selected_fibers = fiber_ui(
             image_mosaic,
             prediction_mosaic.svgs(
@@ -156,7 +150,6 @@ def start_inference(
             if fiber.fiber_id in selected_fibers:
                 fiber.is_an_error = True
 
-        # create a memory buffer to save the Fibers object
         st.download_button(
             label="Download Fibers object",
             data=prediction.to_pickle(),
