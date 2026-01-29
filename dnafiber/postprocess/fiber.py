@@ -485,9 +485,22 @@ class Fibers:
                 return fiber
         return None
 
-    def to_pickle(self, path: str):
-        with open(path, "wb") as f:
-            pickle.dump(self, f)
+    def to_pickle(self, path: Optional[str] = None) -> Optional[bytes]:
+        """
+        Serialize the Fibers object to pickle format.
+
+        Args:
+            path: If provided, write to file. If None, return bytes.
+
+        Returns:
+            Pickle bytes if path is None, otherwise None.
+        """
+        if path is None:
+            return pickle.dumps(self)
+        else:
+            with open(path, "wb") as f:
+                pickle.dump(self, f)
+            return None
 
     @staticmethod
     def from_pickle(path: str) -> "Fibers":

@@ -76,6 +76,7 @@ def on_session_start():
 
 def start_inference(
     image,
+    image_name,
     model_name,
     use_tta=DV.USE_TTA,
     prediction_threshold=DV.PREDICTION_THRESHOLD,
@@ -120,9 +121,9 @@ def start_inference(
         rescaled_image, scale = viewer_components(image, prediction, inference_id)
         start = time.time()
         selected_fibers = fiber_ui(
-            image,
+            rescaled_image,
             prediction.svgs(
-                scale=1,
+                scale=scale,
                 color1=st.session_state.get("color1", "red"),
                 color2=st.session_state.get("color2", "green"),
             ),
@@ -136,8 +137,8 @@ def start_inference(
         prediction_mosaic, image_mosaic = mosaic(
             prediction,
             image,
-            downsample=(max_dim // max_size + 1 if max_dim > max_size else 1),
-            padding=10,
+            downsample=1,
+            padding=50,
             allow_rotation=False,
             context_margin=0.1,
         )
@@ -151,9 +152,17 @@ def start_inference(
             pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
             key=inference_id + "_mosaic",
         )
-    for fiber in prediction:
-        if fiber.fiber_id in selected_fibers:
-            fiber.is_an_error = True
+        for fiber in prediction:
+            if fiber.fiber_id in selected_fibers:
+                fiber.is_an_error = True
+
+        # create a memory buffer to save the Fibers object
+        st.download_button(
+            label="Download Fibers object",
+            data=prediction.to_pickle(),
+            file_name=f"fibers_{image_name}.pkl",
+            mime="application/octet-stream",
+        )
 
     with tab_table:
         if len(prediction) == 0:
@@ -374,6 +383,7 @@ if on_session_start():
 
     start_inference(
         image=image,
+        image_name=selected_file,
         model_name=model_name,
         use_tta=st.session_state.get("use_tta", DV.USE_TTA),
         prediction_threshold=st.session_state.get(
