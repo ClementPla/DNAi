@@ -14,7 +14,6 @@ from dnafiber.ui.components import (
     distribution_analysis,
     viewer_components,
 )
-from dnafiber.ui.mosaic import mosaic
 from dnafiber.ui.custom.fiber_ui import fiber_ui
 from dnafiber.ui.inference import get_model, ui_inference
 from dnafiber.ui.utils import (
@@ -146,16 +145,16 @@ def start_inference(
             pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
             key=inference_id + "_mosaic",
         )
-        for fiber in prediction:
-            if fiber.fiber_id in selected_fibers:
-                fiber.is_an_error = True
+    for fiber in prediction:
+        if fiber.fiber_id in selected_fibers:
+            fiber.is_an_error = True
 
-        st.download_button(
-            label="Download Fibers object",
-            data=prediction.to_pickle(),
-            file_name=f"fibers_{image_name}.pkl",
-            mime="application/octet-stream",
-        )
+    st.download_button(
+        label="Download Fibers object",
+        data=prediction.to_pickle(),
+        file_name=f"fibers_{image_name}.pkl",
+        mime="application/octet-stream",
+    )
 
     with tab_table:
         if len(prediction) == 0:
@@ -167,14 +166,10 @@ def start_inference(
                 inference_id=inference_id,
             )
             for idx in df.index:
-                if df.at[idx, "Fiber ID"] in selected_fibers:
+                if df.at[idx, "Fiber ID"] in selected_fibers + selected_fibers_img:
                     df.at[idx, "is_valid"] = False
 
             table_components(df)
-            st.write(
-                f"Column is_valid of the selected fibers (ids: {', '.join(map(str, selected_fibers))}) were manually switched."
-            )
-
     with tab_distributions:
         if len(prediction) == 0:
             st.warning("No fibers detected in this image.")
@@ -364,7 +359,7 @@ if on_session_start():
 
     # image = blocks[which_y, which_x, 0]
     with st.sidebar:
-        st.image(image, caption=f"Current image {w}x{h}", use_container_width=True)
+        st.image(image, caption=f"Current image {w}x{h}", width="stretch")
 
     inference_id = build_inference_id(
         file_id,
@@ -372,7 +367,6 @@ if on_session_start():
         st.session_state.get("use_tta", DV.USE_TTA),
         st.session_state.get("low_end_hardware", DV.LOW_END_HARDWARE),
     )
-    col1, col2, col3 = st.columns([1, 1, 1])
 
     start_inference(
         image=image,

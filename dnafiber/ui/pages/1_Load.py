@@ -61,7 +61,7 @@ def build_multichannel_loader(accepted_formats):
         accepted_formats,
     )
 
-    with st.expander("Channel interpretation", expanded=False):
+    with st.expander("Channel interpretation", expanded=True):
         st.markdown(
             "The goal is to obtain an RGB image in the order of <span style='color: red;'>First analog</span>, <span style='color: green;'>Second analog</span>, <span style='color: blue;'>Empty</span>.",
             unsafe_allow_html=True,

@@ -4,11 +4,6 @@ import numpy as np
 import cv2
 from dnafiber.postprocess.fiber import Fibers, FiberProps, Bbox
 
-from typing import Tuple, Optional, List
-from dataclasses import dataclass
-import numpy as np
-import cv2
-
 
 @dataclass
 class Rect:
@@ -98,18 +93,51 @@ def _is_contained(inner: Rect, outer: Rect) -> bool:
     )
 
 
-def _prune_free_rects(free_rects: List[Rect]) -> List[Rect]:
-    """Remove rectangles that are fully contained within others."""
-    pruned = []
-    for i, r1 in enumerate(free_rects):
-        contained = False
-        for j, r2 in enumerate(free_rects):
-            if i != j and _is_contained(r1, r2):
-                contained = True
-                break
-        if not contained:
-            pruned.append(r1)
-    return pruned
+def _shelf_pack(items: List[dict], allow_rotation: bool = True) -> None:
+    """
+    Simple shelf packing - O(n log n).
+    Modifies items in-place, adding placed_x, placed_y, placed_w, placed_h, rotated.
+    """
+    # Sort by height descending (creates more uniform shelves)
+    items.sort(
+        key=lambda it: max(it["height"], it["width"])
+        if allow_rotation
+        else it["height"],
+        reverse=True,
+    )
+
+    # Estimate canvas width from total area
+    total_area = sum(it["width"] * it["height"] for it in items)
+    canvas_width = int(np.sqrt(total_area) * 1.2)
+
+    shelf_y = 0
+    shelf_height = 0
+    cursor_x = 0
+
+    for item in items:
+        w, h = item["width"], item["height"]
+
+        # Rotate to make width the longer side if it helps fit on current shelf
+        rotated = False
+        if allow_rotation and h > w:
+            # Prefer "landscape" orientation for shelf packing
+            w, h = h, w
+            rotated = True
+
+        # Check if we need a new shelf
+        if cursor_x + w > canvas_width:
+            shelf_y += shelf_height
+            shelf_height = 0
+            cursor_x = 0
+
+        item["placed_x"] = cursor_x
+        item["placed_y"] = shelf_y
+        item["placed_w"] = w
+        item["placed_h"] = h
+        item["rotated"] = rotated
+
+        cursor_x += w
+        shelf_height = max(shelf_height, h)
 
 
 def _find_best_fit(
@@ -241,54 +269,8 @@ def mosaic(
         empty_img = np.zeros((1, 1, 3), dtype=original_image.dtype)
         return Fibers([]), empty_img
 
-    # Sort by area (largest first) for better packing
-    items.sort(key=lambda it: it["width"] * it["height"], reverse=True)
-
-    # Estimate initial canvas size
-    total_area = sum(it["width"] * it["height"] for it in items)
-    canvas_size = int(np.sqrt(total_area) * 1.2)
-
-    # Try packing, expand canvas if needed
-    for attempt in range(10):
-        free_rects = [Rect(0, 0, canvas_size, canvas_size)]
-        placements = []
-        success = True
-
-        for item in items:
-            w, h = item["width"], item["height"]
-
-            idx, rotated = _find_best_fit(free_rects, w, h, allow_rotation)
-
-            if idx is None:
-                success = False
-                break
-
-            rect = free_rects[idx]
-
-            if rotated:
-                w, h = h, w
-
-            item["placed_x"] = rect.x
-            item["placed_y"] = rect.y
-            item["placed_w"] = w
-            item["placed_h"] = h
-            item["rotated"] = rotated
-            placements.append(item)
-
-            placed = Rect(rect.x, rect.y, w, h)
-
-            new_free_rects = []
-            for free_rect in free_rects:
-                new_free_rects.extend(_split_rect_around_placed(free_rect, placed))
-
-            free_rects = _prune_free_rects(new_free_rects)
-
-        if success:
-            break
-        canvas_size = int(canvas_size * 1.3)
-
-    if not success:
-        raise RuntimeError("Failed to pack all fibers into mosaic")
+    _shelf_pack(items, allow_rotation)
+    placements = items  # All items are now placed
 
     # Compute tight canvas bounds
     max_x = max(it["placed_x"] + it["placed_w"] for it in placements) - padding
