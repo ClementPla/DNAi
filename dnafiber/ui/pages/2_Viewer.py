@@ -131,10 +131,6 @@ def start_inference(
                 else 64,
                 key=inference_id,
             )
-
-    tab_viewer, tab_mosaic, tab_table, tab_distributions = st.tabs(
-        ["Viewer", "Mosaic", "Table", "Distribution"]
-    )
     if detect_errors:
         hide_error = st.checkbox(
             "Hide detected errors",
@@ -142,6 +138,9 @@ def start_inference(
         )
         if hide_error:
             prediction = prediction.filtered_copy()
+    tab_viewer, tab_mosaic, tab_table, tab_distributions = st.tabs(
+        ["Viewer", "Mosaic", "Table", "Distribution"]
+    )
 
     with tab_viewer:
         max_dim = max(org_h, org_w)

@@ -17,10 +17,13 @@ def detect_error(
     device,
     pixel_size=0.13,  # microns per pixel
     batch_size=128,
+    verbose=True,
 ) -> "Fibers":
     """Detect errors in the fibers using the correction model."""
 
-    crops = get_crops(image, fibers, bbox_inflate=4.0, resize=224, return_masks=True)
+    crops = get_crops(
+        image, fibers, bbox_inflate=4.0, resize=224, return_masks=True, verbose=verbose
+    )
     crop_images = (
         np.asarray([crop[0] for crop in crops.values()]).astype(np.float32) / 255.0
     )
@@ -60,7 +63,7 @@ def detect_error(
     progress_bar = st.progress(0, text="Detecting errors...")
     with torch.no_grad():
         predictions = []
-        for i in tqdm(range(0, len(crop_inputs), batch_size)):
+        for i in tqdm(range(0, len(crop_inputs), batch_size), disable=not verbose):
             progress_bar.progress(
                 i / len(crop_inputs),
                 text=f"Detecting errors... ({i}/{len(crop_inputs)})",

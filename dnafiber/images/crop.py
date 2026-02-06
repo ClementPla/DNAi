@@ -11,6 +11,7 @@ def get_crops(
     bbox_inflate: float = 1.0,
     resize: Union[int, Tuple[int, int], None] = None,
     return_masks: bool = False,
+    verbose: bool = True,
 ) -> Dict[int, Union[np.ndarray, Tuple[np.ndarray, np.ndarray]]]:
     crops = {}
 
@@ -22,7 +23,7 @@ def get_crops(
         cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)) if return_masks else None
     )
 
-    for fiber in tqdm(fibers, desc="Cropping fibers", disable=len(fibers) < 50):
+    for fiber in tqdm(fibers, desc="Cropping fibers", disable=not verbose):
         fiber_id = fiber.fiber_id
         ox, oy, ow, oh = fiber.bbox
         cx, cy = ox + ow / 2, oy + oh / 2

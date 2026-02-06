@@ -109,7 +109,8 @@ def inference(
             error_detection_model,
             device=device,
             pixel_size=pixel_size,
-            batch_size=32,
+            batch_size=64 if not low_end_hardware else 32,
+            verbose=verbose,
         )
     return output
 
