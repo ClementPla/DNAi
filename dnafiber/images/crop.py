@@ -3,7 +3,6 @@ from typing import Dict, Tuple, Union
 import numpy as np
 import cv2
 from tqdm.auto import tqdm
-from skimage.segmentation import expand_labels
 
 
 def get_crops(
@@ -18,7 +17,12 @@ def get_crops(
     if isinstance(resize, int):
         resize = (resize, resize)
 
-    for fiber in tqdm(fibers, desc="Cropping fibers"):
+    # Pre-compute dilation kernel outside the loop
+    dilate_kernel = (
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (7, 7)) if return_masks else None
+    )
+
+    for fiber in tqdm(fibers, desc="Cropping fibers", disable=len(fibers) < 50):
         fiber_id = fiber.fiber_id
         ox, oy, ow, oh = fiber.bbox
         cx, cy = ox + ow / 2, oy + oh / 2
@@ -39,39 +43,39 @@ def get_crops(
         raw_crop = image[y1:y2, x1:x2]
 
         # 5. Pad to square if we hit an image edge
-        # We calculate padding based on how much was clipped from the ideal square
         pad_left = int(max(0, -ix1))
         pad_top = int(max(0, -iy1))
         pad_right = int(max(0, ix2 - image.shape[1]))
         pad_bottom = int(max(0, iy2 - image.shape[0]))
 
-        if any([pad_left, pad_top, pad_right, pad_bottom]):
-            # Apply padding to the image crop
-            crop = np.pad(
+        if any((pad_left, pad_top, pad_right, pad_bottom)):
+            crop = cv2.copyMakeBorder(
                 raw_crop,
-                ((pad_top, pad_bottom), (pad_left, pad_right), (0, 0))
-                if raw_crop.ndim == 3
-                else ((pad_top, pad_bottom), (pad_left, pad_right)),
-                mode="constant",
+                pad_top,
+                pad_bottom,
+                pad_left,
+                pad_right,
+                cv2.BORDER_CONSTANT,
+                value=0,
             )
         else:
             crop = raw_crop
 
         if return_masks:
-            # Create a blank mask matching the *padded* crop size
+            # Create a blank mask matching the padded crop size
             mask_full = np.zeros(crop.shape[:2], dtype=np.uint8)
 
             # Calculate relative position of the fiber mask
-            # Local offset = (original top-left) - (padded crop top-left)
             mx1 = int(ox - (x1 - pad_left))
             my1 = int(oy - (y1 - pad_top))
-
             fiber_mask = fiber.data
             mh, mw = fiber_mask.shape
 
             # Place original mask into the square canvas
             mask_full[my1 : my1 + mh, mx1 : mx1 + mw] = fiber_mask
-            mask_full = expand_labels(mask_full, distance=3)
+
+            # Fast single-label dilation instead of expand_labels
+            mask_full = cv2.dilate(mask_full, dilate_kernel, iterations=1)
 
             if resize is not None:
                 crop = cv2.resize(crop, resize, interpolation=cv2.INTER_AREA)
@@ -83,6 +87,7 @@ def get_crops(
         else:
             if resize is not None:
                 crop = cv2.resize(crop, resize, interpolation=cv2.INTER_AREA)
+
             crops[fiber_id] = crop
 
     return crops

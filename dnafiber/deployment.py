@@ -24,6 +24,7 @@ def run_one_file(
     verbose=True,
     low_end_hardware=False,
     clarity=1.0,
+    error_detection_model=None,
 ) -> Fibers:
     start = time.time()
 
@@ -62,6 +63,7 @@ def run_one_file(
         low_end_hardware=low_end_hardware,
         prediction_threshold=prediction_threshold,
         verbose=verbose,
+        error_detection_model=error_detection_model,
     )
 
     return results
@@ -97,7 +99,7 @@ def inference(
         print("Segmentation time:", time.time() - start)
 
     start = time.time()
-    output = refine_segmentation(image, output, device=device)
+    output = refine_segmentation(output)
     if verbose:
         print("Post-processing time:", time.time() - start)
     if error_detection_model is not None:

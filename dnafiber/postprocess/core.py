@@ -1,7 +1,6 @@
 import numpy as np
 import cv2
 from typing import List, Tuple
-from dnafiber.error_detection.inference import detect_error
 from dnafiber.postprocess.skan import find_endpoints, compute_points_angle
 from scipy.spatial.distance import cdist
 from scipy.ndimage import distance_transform_edt

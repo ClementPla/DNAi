@@ -5,9 +5,7 @@ from dnafiber.data.consts import CMAP
 from PIL import Image
 import io
 import time
-from dnafiber.postprocess.core import detect_error
-
-from dnafiber.model.models_zoo import MODELS_ZOO, MODELS_ZOO_R, ENSEMBLE, Models
+from dnafiber.model.models_zoo import ENSEMBLE, Models
 from dnafiber.ui.components import (
     get_mosaic,
     model_configuration_inputs,
