@@ -1,4 +1,5 @@
 import streamlit as st
+import torch
 from dnafiber.error_detection.inference import detect_error
 from dnafiber.inference import run_model, probas_to_segmentation
 from dnafiber.model.utils import get_error_detection_model
@@ -111,7 +112,8 @@ def get_model(model_name):
 
 @st.cache_resource
 def get_postprocess_model():
-    return get_error_detection_model()
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    return get_error_detection_model().to(device)
 
 
 def clear_inference_cache(key=None):
@@ -125,7 +127,7 @@ def clear_inference_cache(key=None):
             del st.session_state[k]
 
 
-@st.cache_data
+@st.cache_data(show_spinner=False)
 def detect_error_with_cache(
     _image: np.ndarray,
     _fibers: Fibers,

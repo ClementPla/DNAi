@@ -8,7 +8,12 @@ import pandas as pd
 import plotly.express as px
 
 from catppuccin import PALETTE
-from dnafiber.ui.inference import ui_inference, get_model
+from dnafiber.ui.inference import (
+    detect_error_with_cache,
+    get_postprocess_model,
+    ui_inference,
+    get_model,
+)
 from dnafiber.ui.components import (
     model_configuration_inputs,
     performance_button,
@@ -139,7 +144,7 @@ def plot_result(selected_category):
     # Set y-axis to log scale
     st.plotly_chart(
         fig,
-        use_container_width=True,
+        width="stretch",
     )
 
 
@@ -173,9 +178,19 @@ def infer(
         _device="cuda" if torch.cuda.is_available() else "cpu",
         use_tta=use_tta,
         prediction_threshold=prediction_threshold,
+        pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
         key=inference_id,
         verbose=True,
         low_end_hardware=low_end_hardware,
+    )
+    results = detect_error_with_cache(
+        _fibers=results,
+        _image=image,
+        _correction_model=get_postprocess_model(),
+        _device="cuda" if torch.cuda.is_available() else "cpu",
+        _pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
+        _batch_size=32 if low_end_hardware else 64,
+        key=inference_id,
     )
     results = results.filtered_copy()
     df = show_fibers_cacheless(results, image, resolution=256)
@@ -254,15 +269,14 @@ def run_inference(model_name, use_tta=DV.USE_TTA, use_correction=DV.USE_CORRECTI
 
 
 if st.session_state.get("files_uploaded", None):
-    run_segmentation = st.button("Run Segmentation", use_container_width=True)
+    run_segmentation = st.button("Run Segmentation", width="stretch")
 
     with st.sidebar:
         performance_button()
         pixel_size_input()
         reverse_channels_input()
 
-        with st.expander("Model", expanded=True):
-            model_name = model_configuration_inputs()
+        model_name = model_configuration_inputs()
 
     tab_segmentation, tab_charts = st.tabs(["Segmentation", "Charts"])
 

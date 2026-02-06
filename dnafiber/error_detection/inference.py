@@ -4,6 +4,7 @@ import numpy as np
 import torch
 from tqdm.auto import tqdm
 from typing import TYPE_CHECKING
+import streamlit as st
 
 if TYPE_CHECKING:
     from dnafiber.postprocess.fiber import Fibers, FiberProps
@@ -56,9 +57,14 @@ def detect_error(
     crop_inputs = torch.from_numpy(crop_inputs).permute(0, 3, 1, 2).to(device)
     features = torch.from_numpy(features).float().to(device)
     correction_model.eval()
+    progress_bar = st.progress(0, text="Detecting errors...")
     with torch.no_grad():
         predictions = []
         for i in tqdm(range(0, len(crop_inputs), batch_size)):
+            progress_bar.progress(
+                i / len(crop_inputs),
+                text=f"Detecting errors... ({i}/{len(crop_inputs)})",
+            )
             batch_inputs = crop_inputs[i : i + batch_size]
             batch_features = features[i : i + batch_size]
             batch_preds = (
@@ -68,5 +74,5 @@ def detect_error(
             predictions.extend(batch_preds.cpu().numpy())
     for fiber, pred in zip(fibers, predictions):
         fiber.is_an_error = bool(pred)
-
+    progress_bar.empty()
     return fibers
