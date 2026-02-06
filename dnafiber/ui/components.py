@@ -5,12 +5,14 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import plotly.graph_objects as go
+from dnafiber.model.models_zoo import MODELS_ZOO, MODELS_ZOO_R, Models
 from dnafiber.postprocess.fiber import Fibers
 
-
+from dnafiber.ui import DefaultValues as DV
+import torch
 import plotly.express as px
 
-from dnafiber.ui.mosaic import mosaic
+from dnafiber.images.mosaic import mosaic
 
 
 @st.cache_data
@@ -99,8 +101,10 @@ def table_components(df):
 
 
 def distribution_analysis(predictions: Fibers):
+    predictions = predictions.filtered_copy()
+    predictions = predictions.only_double_copy()
+
     df = predictions.to_df()
-    df = df[df["Fiber type"] == "double"]
     df = df[(df.Ratio > 0.125) & (df.Ratio < 8)]
     df["Length"] = df["First analog (µm)"] + df["Second analog (µm)"]
     cap = st.checkbox(
@@ -192,3 +196,83 @@ def get_mosaic(_image, _prediction, inference_id):
         context_margin=0.5,
     )
     return prediction_mosaic, image_mosaic
+
+
+def performance_button():
+    st.checkbox(
+        "Memory-saving mode",
+        key="low_end_hardware",
+        help="Enable this option if you are using a computer with limited resources (e.g., less than 8GB of RAM or no dedicated GPU). "
+        "This will reduce the memory consumption of the application at the cost of some performance.",
+    )
+
+
+def pixel_size_input():
+    st.slider(
+        "Pixel size (µm)",
+        min_value=0.01,
+        max_value=1.0,
+        step=0.01,
+        key="pixel_size",
+        help="Pixel size in micrometers",
+    )
+
+
+def reverse_channels_input():
+    st.checkbox(
+        "Reverse channels",
+        key="reverse_channels",
+        help="If the red and green channels are reversed in the image, check this box.",
+    )
+
+
+def model_configuration_inputs():
+    with st.expander("Model", expanded=True):
+        st.checkbox(
+            "Use error detection model",
+            key="use_error_detection_model",
+            help="If checked, the application will use a model to detect and flag fibers that are likely to be errors. This may increase the processing time.",
+        )
+        st.checkbox(
+            "Ensemble model",
+            key="use_ensemble",
+            help="Use all available models to improve segmentation results.",
+        )
+        model_name = st.selectbox(
+            "Select a model",
+            list(MODELS_ZOO.values()),
+            format_func=lambda x: MODELS_ZOO_R[x],
+            index=0,
+            help="Select a model to use for inference",
+            disabled=st.session_state.get("use_ensemble", DV.USE_ENSEMBLE),
+        )
+        if st.session_state.get("use_ensemble", DV.USE_ENSEMBLE):
+            st.warning(
+                "Ensemble model is selected. All available models will be used for inference."
+            )
+            model_name = Models.ENSEMBLE
+
+        st.checkbox(
+            "Use test time augmentation (TTA)",
+            key="use_tta",
+            help="Use test time augmentation to improve segmentation results.",
+        )
+
+        st.slider(
+            "Prediction threshold",
+            min_value=0.15,
+            max_value=1.0,
+            key="prediction_threshold",
+            step=0.01,
+            help="Select the prediction threshold for the model. Lower values may increase the number of detected fibers.",
+        )
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.write("Running on:")
+        with col2:
+            st.button(
+                "GPU" if torch.cuda.is_available() else "CPU",
+                disabled=True,
+            )
+    return model_name

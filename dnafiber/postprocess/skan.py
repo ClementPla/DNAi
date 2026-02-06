@@ -8,8 +8,6 @@ from numba.types import Tuple
 
 import numba
 
-from numba import njit, prange
-from numba.typed import List
 
 # Define tuple type once at module level
 tuple_type = numba.types.UniTuple(numba.types.int64, 2)
@@ -61,39 +59,25 @@ def get_neighbors_8_inline(y, x, shape_y, shape_x):
     return neighbors
 
 
+# NEW: helper that traces sequentially in one direction
 @njit
-def trace_from_point_optimized(skel, point, max_length=25):
-    """Optimized tracing with pre-allocated structures."""
-    y, x = point
+def _trace_one_direction(skel, start_y, start_x, visited, max_length):
+    """Trace sequentially in one direction, preferring straight continuation."""
     shape_y, shape_x = skel.shape
-
-    # Early exit
-    if y < 0 or y >= shape_y or x < 0 or x >= shape_x or skel[y, x] != 1:
-        return List.empty_list(tuple_type)
-
-    visited = np.zeros((shape_y, shape_x), dtype=np.uint8)
     path = List.empty_list(tuple_type)
+    cy, cx = start_y, start_x
+    prev_dy, prev_dx = 0, 0
 
-    # Use a simple array-based stack instead of List for better performance
-    stack_y = np.empty(max_length * 8, dtype=np.int64)
-    stack_x = np.empty(max_length * 8, dtype=np.int64)
-    stack_ptr = 0
-
-    stack_y[0] = y
-    stack_x[0] = x
-    stack_ptr = 1
-
-    while stack_ptr > 0 and len(path) < max_length:
-        stack_ptr -= 1
-        cy = stack_y[stack_ptr]
-        cx = stack_x[stack_ptr]
-
-        if visited[cy, cx]:
-            continue
+    while len(path) < max_length:
         visited[cy, cx] = 1
         path.append((cy, cx))
 
-        # Inline neighbor iteration
+        neighbors_y = np.empty(8, dtype=np.int64)
+        neighbors_x = np.empty(8, dtype=np.int64)
+        neighbors_dy = np.empty(8, dtype=np.int64)
+        neighbors_dx = np.empty(8, dtype=np.int64)
+        n_neighbors = 0
+
         for dy in range(-1, 2):
             for dx in range(-1, 2):
                 if dy == 0 and dx == 0:
@@ -101,11 +85,92 @@ def trace_from_point_optimized(skel, point, max_length=25):
                 ny, nx = cy + dy, cx + dx
                 if 0 <= ny < shape_y and 0 <= nx < shape_x:
                     if skel[ny, nx] == 1 and visited[ny, nx] == 0:
-                        stack_y[stack_ptr] = ny
-                        stack_x[stack_ptr] = nx
-                        stack_ptr += 1
+                        neighbors_y[n_neighbors] = ny
+                        neighbors_x[n_neighbors] = nx
+                        neighbors_dy[n_neighbors] = dy
+                        neighbors_dx[n_neighbors] = dx
+                        n_neighbors += 1
+
+        if n_neighbors == 0:
+            break
+
+        best_idx = 0
+        if n_neighbors > 1 and (prev_dy != 0 or prev_dx != 0):
+            best_score = -999.0
+            for i in range(n_neighbors):
+                score = float(prev_dy * neighbors_dy[i] + prev_dx * neighbors_dx[i])
+                if score > best_score:
+                    best_score = score
+                    best_idx = i
+
+        prev_dy = neighbors_dy[best_idx]
+        prev_dx = neighbors_dx[best_idx]
+        cy = neighbors_y[best_idx]
+        cx = neighbors_x[best_idx]
 
     return path
+
+
+@njit
+def trace_from_point_optimized(skel, point, max_length=25):
+    """Trace a sequential path centered on the given point.
+
+    Traces in both directions from the start and concatenates,
+    producing a geometrically ordered path for line fitting.
+    """
+    y, x = point
+    shape_y, shape_x = skel.shape
+
+    if y < 0 or y >= shape_y or x < 0 or x >= shape_x or skel[y, x] != 1:
+        return List.empty_list(tuple_type)
+
+    visited = np.zeros((shape_y, shape_x), dtype=np.uint8)
+    visited[y, x] = 1
+
+    # Find skeleton neighbors of start point
+    starts_y = np.empty(8, dtype=np.int64)
+    starts_x = np.empty(8, dtype=np.int64)
+    n_starts = 0
+    for dy in range(-1, 2):
+        for dx in range(-1, 2):
+            if dy == 0 and dx == 0:
+                continue
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < shape_y and 0 <= nx < shape_x:
+                if skel[ny, nx] == 1:
+                    starts_y[n_starts] = ny
+                    starts_x[n_starts] = nx
+                    n_starts += 1
+
+    if n_starts == 0:
+        path = List.empty_list(tuple_type)
+        path.append((y, x))
+        return path
+
+    if n_starts >= 2:
+        half = max_length // 2
+        path_a = _trace_one_direction(skel, starts_y[0], starts_x[0], visited, half)
+        # Give remaining budget to direction B
+        remaining = max_length - len(path_a) - 1  # -1 for the start point
+        path_b = _trace_one_direction(
+            skel, starts_y[1], starts_x[1], visited, remaining
+        )
+    else:
+        # Only one direction — give it the full budget
+        path_a = _trace_one_direction(
+            skel, starts_y[0], starts_x[0], visited, max_length - 1
+        )
+        path_b = List.empty_list(tuple_type)
+
+    # Assemble: reverse(path_a) + start + path_b
+    result = List.empty_list(tuple_type)
+    for i in range(len(path_a) - 1, -1, -1):
+        result.append(path_a[i])
+    result.append((y, x))
+    for i in range(len(path_b)):
+        result.append(path_b[i])
+
+    return result
 
 
 @njit
@@ -207,15 +272,30 @@ def compute_points_angle_numba(binary_map, points, steps=25, oriented=False):
         vx, vy = fit_line_simple(path_y, path_x)
 
         if oriented:
-            # Compute mean position
+            # Compute centroid of the traced path
             mean_x = 0.0
+            mean_y = 0.0
             for j in range(len(path)):
                 mean_x += path_x[j]
+                mean_y += path_y[j]
             mean_x /= len(path)
+            mean_y /= len(path)
 
             angle = np.arctan2(vy, vx)
-            if mean_x > points[i, 1]:
-                angle -= np.pi
+
+            # Vector from centroid to the endpoint (outward direction)
+            out_x = points[i, 1] - mean_x
+            out_y = points[i, 0] - mean_y
+
+            # If fitted direction points INTO the fiber (negative dot with outward),
+            # flip it so it points outward for prolongation
+            dot = vx * out_x + vy * out_y
+            if dot < 0:
+                angle += np.pi
+                # Normalize to [-pi, pi]
+                if angle > np.pi:
+                    angle -= 2 * np.pi
+
             angles[i] = angle
         else:
             angles[i] = np.arctan2(vy, vx)
@@ -342,7 +422,45 @@ def trace_skeleton(skel):
     if len(endpoints) < 1:
         return List.empty_list(tuple_type)  # Return empty list with proper type
 
-    return trace_from_point_smooth(skel, endpoints[0], max_length=skel.sum())
+    return trace_from_point_optimized(skel, endpoints[0], max_length=skel.sum())
+
+
+@njit
+def compute_trace_curvature(trace_array, window=15):
+    n_points = len(trace_array)
+    if n_points < 2 * window + 1:
+        return 0.0
+
+    total_angle = 0.0
+
+    for i in range(window, n_points - window):
+        v1_y = float(trace_array[i][0] - trace_array[i - window][0])
+        v1_x = float(trace_array[i][1] - trace_array[i - window][1])
+        v2_y = float(trace_array[i + window][0] - trace_array[i][0])
+        v2_x = float(trace_array[i + window][1] - trace_array[i][1])
+
+        mag1 = np.sqrt(v1_y * v1_y + v1_x * v1_x)
+        mag2 = np.sqrt(v2_y * v2_y + v2_x * v2_x)
+
+        if mag1 > 0 and mag2 > 0:
+            dot = (v1_y * v2_y + v1_x * v2_x) / (mag1 * mag2)
+            if dot > 1.0:
+                dot = 1.0
+            elif dot < -1.0:
+                dot = -1.0
+            total_angle += np.arccos(dot)
+
+    # Normalize by arc length to make it scale-invariant
+    arc_length = 0.0
+    for i in range(1, n_points):
+        dy = float(trace_array[i][0] - trace_array[i - 1][0])
+        dx = float(trace_array[i][1] - trace_array[i - 1][1])
+        arc_length += np.sqrt(dy * dy + dx * dx)
+
+    if arc_length < 1e-6:
+        return 0.0
+
+    return total_angle / arc_length
 
 
 @njit
@@ -481,9 +599,15 @@ def follow_along_direction_until_change(
             if current_color.any() == 0:
                 continue
 
-            difference = np.sqrt(np.sum((current_color - start_color) ** 2)) / np.sqrt(
-                np.sum(start_color**2)
-            )
+            # AFTER (safe):
+            norm_start = np.sqrt(np.sum(start_color**2))
+            if norm_start < 1e-6:
+                # Start color is effectively black — use absolute difference instead
+                difference = np.sqrt(np.sum((current_color - start_color) ** 2)) / 255.0
+            else:
+                difference = (
+                    np.sqrt(np.sum((current_color - start_color) ** 2)) / norm_start
+                )
             if difference < threshold:
                 found_continuity = True
                 path.append((new_y, new_x))

@@ -7,3 +7,4 @@ class DefaultValues:
     USE_ENSEMBLE = False
     LOW_END_HARDWARE = False
     CLARITY = 1.0
+    DETECT_ERRORS = True

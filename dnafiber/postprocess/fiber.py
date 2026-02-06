@@ -1,7 +1,8 @@
 import attrs
+from matplotlib.collections import LineCollection
 import numpy as np
 from typing import Optional, Tuple
-from dnafiber.postprocess.skan import trace_skeleton
+from dnafiber.postprocess.skan import trace_skeleton, compute_trace_curvature
 from skimage.segmentation import expand_labels
 from dnafiber.postprocess.utils import generate_svg
 import pickle
@@ -61,6 +62,7 @@ class FiberProps:
     svg_rep: str = None  # SVG representation of the fiber, for visualization purposes
     trace: np.ndarray = None  # Coordinates of the skeletons of the fiber
     endpoint_correction: float = 0.0  # NEW: pixels to add for endpoint caps
+    curvature: float = None  # Cached curvature value
 
     @property
     def bbox(self):
@@ -115,11 +117,59 @@ class FiberProps:
             self.category = estimate_fiber_category(self.get_trace(), self.data)
         return self.category
 
+    def get_curvature(self):
+        if self.curvature is not None:
+            return self.curvature
+
+        trace = self.get_trace()
+        if trace is None or len(trace) < 3:
+            self.curvature = 0.0
+        else:
+            self.curvature = float(compute_trace_curvature(np.ascontiguousarray(trace)))
+        return self.curvature
+
+    @property
+    def tortuosity(self) -> float:
+        """
+        Arc-length tortuosity: (actual_length / euclidean_distance) - 1
+        """
+        trace = self.get_trace()
+        if trace is None or len(trace) < 2:
+            return 0.0
+
+        actual_len = len(trace)
+        # Distance from first point to last point
+        dy = trace[-1][0] - trace[0][0]
+        dx = trace[-1][1] - trace[0][1]
+        chord_len = np.sqrt(dy**2 + dx**2)
+
+        if chord_len == 0:
+            return 0.0
+
+        return float((actual_len / chord_len) - 1.0)
+
+    def get_mean_intensity(self, image):
+        """
+        Compute the mean intensity of the fiber in the given image.
+        Assumes image is a 2D or 3D numpy array.
+        """
+
+        if image.ndim == 3:
+            R_intensity = np.mean(image[self.data == 1, 0])
+            G_intensity = np.mean(image[self.data == 2, 1])
+            return np.asarray([R_intensity, G_intensity], dtype=np.float32)
+        else:
+            mask = self.data > 0
+            intensities = image[mask]
+            mean_intensity = np.mean(intensities)
+        return mean_intensity
+
     def get_trace(self):
         if self.trace is not None:
             return self.trace
         # Generate trace if not provided
-        self.trace = np.asarray(trace_skeleton(self.data > 0))
+        self.trace = np.ascontiguousarray(trace_skeleton(self.data > 0))
+
         if not self.trace.size:
             self.trace = np.empty((0, 2), dtype=int)
         return self.trace
@@ -214,9 +264,9 @@ class FiberProps:
             return None
         return svg_representation
 
-    def debug(self, img=None, scale=1.0):
+    def debug(self, img=None, scale=1.0, linewidth=2, with_features=False):
         fig, ax = plt.subplots(figsize=(8, 8))
-
+        ax.imshow(np.zeros_like(self.data), cmap="gray")
         if img is not None:
             x, y, w, h = self.bbox
             ax.imshow(img[y : y + h, x : x + w])
@@ -226,15 +276,25 @@ class FiberProps:
         # Draw the skeleton
         trace = self.get_trace()
         if trace.size > 0:
-            ax.plot(
-                trace[:, 1] * scale,
-                trace[:, 0] * scale,
-                color="yellow",
-                linewidth=1,
-            )
+            # Start color
+            blue = np.array([0, 0, 1.0], dtype=np.float32)
+            # End color
+            white = np.array([1.0, 1.0, 1.0], dtype=np.float32)
+            interpolation = np.linspace(0, 1, len(trace))
+            colors = np.outer(1 - interpolation, blue) + np.outer(interpolation, white)
+            # Build segments: each segment connects consecutive points
+            points = np.column_stack([trace[:, 1] * scale, trace[:, 0] * scale])
+            segments = np.stack([points[:-1], points[1:]], axis=1)  # (N-1, 2, 2)
+
+            lc = LineCollection(segments, colors=colors[:-1], linewidth=linewidth)
+            ax.add_collection(lc)
         ax.set_title(
-            f"Fiber ID: {self.fiber_id}, Type: {self.fiber_type}, Red: {self.red}, Green: {self.green}, Ratio: {self.ratio:.2f}"
+            f"Fiber ID: {self.fiber_id}, Type: {self.fiber_type}, Red: {self.red}, Green: {self.green}, Ratio: {self.ratio:.2f}, Is error: {self.is_an_error}"
         )
+        if with_features:
+            curvature = self.get_curvature()
+            tortuosity = self.tortuosity
+            ax.set_xlabel(f"Curvature: {curvature:.4f}, Tortuosity: {tortuosity:.4f}")
         plt.show()
 
 
@@ -514,6 +574,18 @@ class Fibers:
 
     def __reduce__(self):
         return (self.__class__, (self.fibers, self.path))
+
+    def deepcopy(self) -> "Fibers":
+        copied_fibers = [
+            FiberProps(
+                bbox=fiber.bbox,
+                data=fiber.data,
+                fiber_id=fiber.fiber_id,
+                is_an_error=fiber.is_an_error,
+            )
+            for fiber in self.fibers
+        ]
+        return Fibers(copied_fibers, path=self.path)
 
 
 def estimate_fiber_category(fiber_trace: np.ndarray, fiber_data: np.ndarray) -> str:

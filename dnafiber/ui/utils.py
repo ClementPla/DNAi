@@ -116,6 +116,8 @@ def build_file_id(file, pixel_size, reverse_channels, clarity) -> str:
 
 
 def init_session_states():
+    if "use_error_detection_model" not in st.session_state:
+        st.session_state["use_error_detection_model"] = DV.DETECT_ERRORS
     if "pixel_size" not in st.session_state:
         st.session_state["pixel_size"] = DV.PIXEL_SIZE
     if "reverse_channels" not in st.session_state:

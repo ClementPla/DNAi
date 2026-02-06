@@ -5,17 +5,27 @@ from dnafiber.data.consts import CMAP
 from PIL import Image
 import io
 import time
+from dnafiber.postprocess.core import detect_error
 
 from dnafiber.model.models_zoo import MODELS_ZOO, MODELS_ZOO_R, ENSEMBLE, Models
 from dnafiber.ui.components import (
     get_mosaic,
+    model_configuration_inputs,
+    performance_button,
+    pixel_size_input,
+    reverse_channels_input,
     show_fibers,
     table_components,
     distribution_analysis,
     viewer_components,
 )
 from dnafiber.ui.custom.fiber_ui import fiber_ui
-from dnafiber.ui.inference import get_model, ui_inference
+from dnafiber.ui.inference import (
+    detect_error_with_cache,
+    get_model,
+    get_postprocess_model,
+    ui_inference,
+)
 from dnafiber.ui.utils import (
     build_file_id,
     build_inference_id,
@@ -81,6 +91,7 @@ def start_inference(
     use_tta=DV.USE_TTA,
     prediction_threshold=DV.PREDICTION_THRESHOLD,
     inference_id=None,
+    detect_errors=DV.DETECT_ERRORS,
 ):
     org_h, org_w = image.shape[:2]
     image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
@@ -104,10 +115,35 @@ def start_inference(
         low_end_hardware=st.session_state.get("low_end_hardware", DV.LOW_END_HARDWARE),
         key=inference_id,
     )
+
     prediction = prediction.valid_copy()
+    if detect_errors:
+        with st.spinner("Detecting errors in fibers..."):
+            correction_model = get_postprocess_model().to(
+                "cuda" if torch.cuda.is_available() else "cpu"
+            )
+            prediction = detect_error_with_cache(
+                _fibers=prediction,
+                _image=image,
+                _correction_model=correction_model,
+                _device="cuda" if torch.cuda.is_available() else "cpu",
+                _pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
+                _batch_size=32
+                if st.session_state.get("low_end_hardware", DV.LOW_END_HARDWARE)
+                else 64,
+                key=inference_id,
+            )
+
     tab_viewer, tab_mosaic, tab_table, tab_distributions = st.tabs(
         ["Viewer", "Mosaic", "Table", "Distribution"]
     )
+    if detect_errors:
+        hide_error = st.checkbox(
+            "Hide detected errors",
+            help="Toggle the visibility of fibers detected as errors in the viewer and table.",
+        )
+        if hide_error:
+            prediction = prediction.filtered_copy()
 
     with tab_viewer:
         max_dim = max(org_h, org_w)
@@ -238,19 +274,8 @@ def start_inference(
 
 if on_session_start():
     with st.sidebar:
-        st.slider(
-            "Pixel size (µm)",
-            min_value=0.01,
-            max_value=1.0,
-            step=0.01,
-            key="pixel_size",
-            help="Pixel size in micrometers",
-        )
-        st.checkbox(
-            "Reverse channels",
-            key="reverse_channels",
-            help="If the red and green channels are reversed in the image, check this box.",
-        )
+        pixel_size_input()
+        reverse_channels_input()
     files = st.session_state.files_uploaded
     displayed_names = create_display_files(files)
     with st.sidebar:
@@ -307,55 +332,8 @@ if on_session_start():
     thumbnail = get_resized_image(image, file_id)
 
     with st.sidebar:
-        st.checkbox(
-            "Low-end hardware mode",
-            key="low_end_hardware",
-            help="Enable this option if you are using a computer with limited resources (e.g., less than 8GB of RAM or no dedicated GPU). "
-            "This will reduce the memory consumption of the application at the cost of some performance.",
-        )
-        with st.expander("Model", expanded=True):
-            st.checkbox(
-                "Ensemble model",
-                key="use_ensemble",
-                help="Use all available models to improve segmentation results.",
-            )
-            model_name = st.selectbox(
-                "Select a model",
-                list(MODELS_ZOO.values()),
-                format_func=lambda x: MODELS_ZOO_R[x],
-                index=0,
-                help="Select a model to use for inference",
-                disabled=st.session_state.get("use_ensemble", DV.USE_ENSEMBLE),
-            )
-            if st.session_state.get("use_ensemble", DV.USE_ENSEMBLE):
-                st.warning(
-                    "Ensemble model is selected. All available models will be used for inference."
-                )
-                model_name = Models.ENSEMBLE
-
-            st.checkbox(
-                "Use test time augmentation (TTA)",
-                key="use_tta",
-                help="Use test time augmentation to improve segmentation results.",
-            )
-
-            st.slider(
-                "Prediction threshold",
-                min_value=0.15,
-                max_value=1.0,
-                key="prediction_threshold",
-                step=0.01,
-                help="Select the prediction threshold for the model. Lower values may increase the number of detected fibers.",
-            )
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.write("Running on:")
-            with col2:
-                st.button(
-                    "GPU" if torch.cuda.is_available() else "CPU",
-                    disabled=True,
-                )
+        performance_button()
+        model_name = model_configuration_inputs()
 
     # image = blocks[which_y, which_x, 0]
     with st.sidebar:
@@ -377,6 +355,9 @@ if on_session_start():
             "prediction_threshold", DV.PREDICTION_THRESHOLD
         ),
         inference_id=inference_id,
+        detect_errors=st.session_state.get(
+            "use_error_detection_model", DV.DETECT_ERRORS
+        ),
     )
 
     sidebar_diagnostics()

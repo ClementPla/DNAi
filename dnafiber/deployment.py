@@ -1,5 +1,6 @@
 import math
 import time
+from dnafiber.error_detection.inference import detect_error
 from dnafiber.inference import run_model, probas_to_segmentation
 import cv2
 import pandas as pd
@@ -75,6 +76,7 @@ def inference(
     prediction_threshold=1 / 3,
     low_end_hardware=False,
     verbose=True,
+    error_detection_model=None,
 ) -> np.ndarray | Fibers:
     start = time.time()
     output = run_model(
@@ -98,6 +100,15 @@ def inference(
     output = refine_segmentation(image, output, device=device)
     if verbose:
         print("Post-processing time:", time.time() - start)
+    if error_detection_model is not None:
+        output = detect_error(
+            output,
+            image,
+            error_detection_model,
+            device=device,
+            pixel_size=pixel_size,
+            batch_size=32,
+        )
     return output
 
 

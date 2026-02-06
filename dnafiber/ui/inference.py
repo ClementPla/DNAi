@@ -1,8 +1,11 @@
 import streamlit as st
+from dnafiber.error_detection.inference import detect_error
 from dnafiber.inference import run_model, probas_to_segmentation
+from dnafiber.model.utils import get_error_detection_model
 from dnafiber.postprocess.core import refine_segmentation
 import numpy as np
 from dnafiber.ui.utils import _get_model
+
 from dnafiber.postprocess.fiber import Fibers
 import time
 import monai.inferers.utils as monai_utils
@@ -90,7 +93,7 @@ def ui_inference(
         print("Post-processing segmentation...")
 
     with st.spinner("Post-processing segmentation..."):
-        prediction = refine_segmentation(_image, prediction, device=_device)
+        prediction = refine_segmentation(prediction)
 
     if verbose:
         print("Post-processing time:", time.time() - start)
@@ -106,6 +109,11 @@ def get_model(model_name):
     return _get_model(revision=model_name)
 
 
+@st.cache_resource
+def get_postprocess_model():
+    return get_error_detection_model()
+
+
 def clear_inference_cache(key=None):
     """Clear cached inference results."""
     if key:
@@ -115,3 +123,23 @@ def clear_inference_cache(key=None):
         keys = [k for k in st.session_state if k.startswith("_inference_result_")]
         for k in keys:
             del st.session_state[k]
+
+
+@st.cache_data
+def detect_error_with_cache(
+    _image: np.ndarray,
+    _fibers: Fibers,
+    _correction_model,
+    _device,
+    _pixel_size,
+    _batch_size=32,
+    key="default",
+):
+    return detect_error(
+        _fibers.deepcopy(),
+        _image,
+        _correction_model,
+        device=_device,
+        pixel_size=_pixel_size,
+        batch_size=_batch_size,
+    )

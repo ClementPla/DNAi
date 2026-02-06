@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 from typing import List, Tuple
+from dnafiber.error_detection.inference import detect_error
 from dnafiber.postprocess.skan import find_endpoints, compute_points_angle
 from scipy.spatial.distance import cdist
 from scipy.ndimage import distance_transform_edt
@@ -10,13 +11,8 @@ from skimage.morphology import skeletonize
 from dnafiber.postprocess.skan import find_line_intersection
 from dnafiber.postprocess.fiber import FiberProps, Bbox, Fibers
 from itertools import compress
-from matplotlib.colors import ListedColormap
-from dnafiber.postprocess.error_detection import correct_fibers
 from scipy.cluster.hierarchy import fcluster, linkage
-import streamlit as st
-import matplotlib.pyplot as plt
 
-cmlabel = ListedColormap(["black", "red", "green"])
 
 MIN_ANGLE = 45
 MIN_BRANCH_LENGTH = 1
@@ -450,30 +446,17 @@ def extract_fibers(
 
 
 def refine_segmentation(
-    image,
     segmentation,
     x_offset=0,
     y_offset=0,
-    correction_model=None,
-    device=None,
-    verbose=False,
-):
+) -> Fibers:
     fibers = extract_fibers(
         segmentation,
         x_offset=x_offset,
         y_offset=y_offset,
     )
-    if correction_model is not None:
-        fibers = correct_fibers(
-            fibers,
-            image,
-            correction_model=correction_model,
-            device=device,
-            verbose=verbose,
-        )
-
-    fibers = Fibers(fibers=fibers)
     # We set an id to each fiber
-    for i, fiber in enumerate(fibers.fibers):
+    for i, fiber in enumerate(fibers):
         fiber.fiber_id = i + 1
+
     return fibers

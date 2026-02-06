@@ -9,7 +9,14 @@ import plotly.express as px
 
 from catppuccin import PALETTE
 from dnafiber.ui.inference import ui_inference, get_model
-from dnafiber.ui.components import show_fibers_cacheless, table_components
+from dnafiber.ui.components import (
+    model_configuration_inputs,
+    performance_button,
+    pixel_size_input,
+    reverse_channels_input,
+    show_fibers_cacheless,
+    table_components,
+)
 from dnafiber.ui.utils import build_inference_id
 from dnafiber.ui import DefaultValues as DV
 
@@ -250,51 +257,12 @@ if st.session_state.get("files_uploaded", None):
     run_segmentation = st.button("Run Segmentation", use_container_width=True)
 
     with st.sidebar:
-        st.checkbox(
-            "Low-end hardware mode",
-            key="low_end_hardware",
-            help="Enable this option if you are using a computer with limited resources (e.g., less than 8GB of RAM or no dedicated GPU). "
-            "This will reduce the memory consumption of the application at the cost of some performance.",
-        )
-        st.slider(
-            "Pixel size (µm)",
-            min_value=0.01,
-            max_value=1.0,
-            step=0.01,
-            key="pixel_size",
-            help="Pixel size in micrometers",
-        )
-        st.checkbox(
-            "Reverse channels",
-            key="reverse_channels",
-            help="If the red and green channels are reversed in the image, check this box.",
-        )
+        performance_button()
+        pixel_size_input()
+        reverse_channels_input()
 
         with st.expander("Model", expanded=True):
-            st.checkbox(
-                "Ensemble model",
-                key="use_ensemble",
-                help="Use all available models to improve segmentation results.",
-            )
-            model_name = st.selectbox(
-                "Select a model",
-                list(MODELS_ZOO.values()),
-                format_func=lambda x: MODELS_ZOO_R[x],
-                index=0,
-                help="Select a model to use for inference",
-                disabled=st.session_state.get("use_ensemble", DV.USE_ENSEMBLE),
-            )
-            if st.session_state.get("use_ensemble", DV.USE_ENSEMBLE):
-                st.warning(
-                    "Ensemble model is selected. All available models will be used for inference."
-                )
-                model_name = Models.ENSEMBLE
-
-            st.checkbox(
-                "Use test time augmentation (TTA)",
-                key="use_tta",
-                help="Use test time augmentation to improve segmentation results.",
-            )
+            model_name = model_configuration_inputs()
 
     tab_segmentation, tab_charts = st.tabs(["Segmentation", "Charts"])
 

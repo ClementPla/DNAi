@@ -1,6 +1,11 @@
 import streamlit as st
 from pathlib import Path
 from dnafiber.ui import DefaultValues as DV
+from dnafiber.ui.components import (
+    performance_button,
+    pixel_size_input,
+    reverse_channels_input,
+)
 from dnafiber.ui.utils import init_session_states, retain_session_state
 
 retain_session_state(st.session_state)
@@ -233,12 +238,7 @@ with cols[0]:
         build_multichannel_loader(accepted_formats)
 
 with st.sidebar:
-    st.checkbox(
-        "Low-end hardware mode",
-        key="low_end_hardware",
-        help="Enable this option if you are using a computer with limited resources (e.g., less than 8GB of RAM or no dedicated GPU). "
-        "This will reduce the memory consumption of the application at the cost of some performance.",
-    )
+    performance_button()
     clear_stack = st.button("Clear all uploaded files")
     if clear_stack:
         st.session_state["files_uploaded"] = []
