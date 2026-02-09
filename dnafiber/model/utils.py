@@ -64,12 +64,11 @@ def get_error_detection_model(revision=None, **kwargs) -> ErrorDetectionModule:
         model = ErrorDetectionModule.from_pretrained(
             "ClementP/DeepFiberQV3",
             revision="error_detection_convnext_tiny",
-            force_download=True,
             model_name="convnext_tiny",
         )
     else:
         model = ErrorDetectionModule.load_from_checkpoint(
-            "ClementP/DeepFiberQV3", revision=revision, force_download=True, **kwargs
+            "ClementP/DeepFiberQV3", revision=revision, **kwargs
         )
     return model.eval().to("cpu")
 
