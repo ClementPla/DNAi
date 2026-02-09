@@ -11,6 +11,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from dnafiber.data.consts import CMAP
 from scipy.optimize import linear_sum_assignment
+from dnafiber.postprocess.types import FiberType
 
 
 @attrs.define
@@ -58,7 +59,7 @@ class FiberProps:
     red_pixels: int = None
     green_pixels: int = None
     category: str = None
-    is_an_error: bool = False
+    proba_error: float = 0.0
     svg_rep: str = None  # SVG representation of the fiber, for visualization purposes
     trace: np.ndarray = None  # Coordinates of the skeletons of the fiber
     endpoint_correction: float = 0.0  # NEW: pixels to add for endpoint caps
@@ -112,7 +113,7 @@ class FiberProps:
             return self.category
         red_pixels, green_pixels = self.counts
         if red_pixels == 0 or green_pixels == 0:
-            self.category = "single"
+            self.category = FiberType.ONE_SEGMENT
         else:
             self.category = estimate_fiber_category(self.get_trace(), self.data)
         return self.category
@@ -191,20 +192,16 @@ class FiberProps:
         return self.is_double or self.is_triple or self.is_more_than_triple
 
     @property
-    def is_acceptable(self):
-        return not self.is_an_error
-
-    @property
     def is_double(self):
-        return self.fiber_type == "double"
+        return self.fiber_type == FiberType.TWO_SEGMENTS
 
     @property
     def is_triple(self):
-        return self.fiber_type in ["one-two-one", "two-one-two"]
+        return self.fiber_type in [FiberType.ONE_TWO_ONE, FiberType.TWO_ONE_TWO]
 
     @property
     def is_more_than_triple(self):
-        return self.fiber_type == "multiple"
+        return self.fiber_type == FiberType.OTHER
 
     def scaled_coordinates(self, scale: float) -> Tuple[int, int]:
         """
@@ -289,7 +286,7 @@ class FiberProps:
             lc = LineCollection(segments, colors=colors[:-1], linewidth=linewidth)
             ax.add_collection(lc)
         ax.set_title(
-            f"Fiber ID: {self.fiber_id}, Type: {self.fiber_type}, Red: {self.red}, Green: {self.green}, Ratio: {self.ratio:.2f}, Is error: {self.is_an_error}"
+            f"Fiber ID: {self.fiber_id}, Type: {self.fiber_type.value}, Red: {self.red}, Green: {self.green}, Ratio: {self.ratio:.2f}, Is error: {self.is_an_error}"
         )
         if with_features:
             curvature = self.get_curvature()
@@ -402,9 +399,9 @@ class Fibers:
     def valid_copy(self):
         return Fibers([fiber for fiber in self.fibers if fiber.is_valid])
 
-    def filtered_copy(self):
+    def filter_errors(self, threshold=0.5):
         return Fibers(
-            [fiber for fiber in self.fibers if (fiber.is_acceptable and fiber.is_valid)]
+            [fiber for fiber in self.fibers if (fiber.proba_error < threshold)]
         )
 
     def filter_border(self, h, w, border=1):
@@ -581,7 +578,7 @@ class Fibers:
                 bbox=fiber.bbox,
                 data=fiber.data,
                 fiber_id=fiber.fiber_id,
-                is_an_error=fiber.is_an_error,
+                proba_error=fiber.proba_error,
             )
             for fiber in self.fibers
         ]
@@ -602,11 +599,11 @@ def estimate_fiber_category(fiber_trace: np.ndarray, fiber_data: np.ndarray) -> 
     jump = np.sum(diff != 0)
     n_ccs = jump + 1
     if n_ccs == 2:
-        return "double"
+        return FiberType.TWO_SEGMENTS
     elif n_ccs == 3:
         if values[0] == 1:
-            return "one-two-one"
+            return FiberType.ONE_TWO_ONE
         else:
-            return "two-one-two"
+            return FiberType.TWO_ONE_TWO
     else:
-        return "multiple"
+        return FiberType.OTHER

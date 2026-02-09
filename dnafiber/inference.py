@@ -11,7 +11,7 @@ from dnafiber.model.autopadDPT import AutoPad
 import kornia as K
 import torch.nn as nn
 import ttach as tta
-import torch.nn as nn
+import cv2
 
 
 transform = A.Compose(
@@ -121,6 +121,7 @@ class EnsembleModel(nn.Module):
 
 # --- Main Inference Logic ---
 
+
 @torch.inference_mode()
 def run_model(
     model_input,
@@ -206,18 +207,11 @@ def run_model(
 
     return F.interpolate(accumulated_probs, size=(h_orig, w_orig), mode="bilinear")
 
+
 @torch.inference_mode()
-def probas_to_segmentation(probas, prediction_threshold=1 / 3) -> np.ndarray:
-    # probas shape: [1, 3, H, W]
-    fg_probs = 1.0 - probas[:, 0:1, :, :]
+def probas_to_segmentation(probas) -> np.ndarray:
+    seg = probas.argmax(dim=1).byte().squeeze(0).cpu().numpy()
 
-    # fiber_mask is 1 where we want to FORCE a fiber detection
-    fiber_mask = fg_probs >= prediction_threshold
-
-    # LOGIC: If it's a fiber, make background 0 so a color MUST win.
-    # If it's NOT a fiber, make background 1 so it MUST win.
-    probas[:, 0:1, :, :] = torch.where(fiber_mask, 0.0, 1.0)
-
-    # 4. Argmax + Conversion
-    # byte() is fine, but uint8 is the standard for masks
-    return probas.argmax(dim=1).byte().squeeze(0).cpu().numpy()
+    return cv2.morphologyEx(
+        seg, cv2.MORPH_DILATE, kernel=np.ones((3, 3), dtype=np.uint8)
+    )

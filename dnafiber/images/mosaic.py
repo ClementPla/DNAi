@@ -312,7 +312,7 @@ def mosaic(
             red_pixels=None,
             green_pixels=None,
             category=fiber.category,
-            is_an_error=fiber.is_an_error,
+            proba_error=fiber.proba_error,
             svg_rep=None,
             trace=None,
             endpoint_correction=fiber.endpoint_correction,

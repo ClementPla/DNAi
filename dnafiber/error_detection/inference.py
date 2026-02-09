@@ -71,12 +71,10 @@ def detect_error(
             )
             batch_inputs = crop_inputs[i : i + batch_size]
             batch_features = features[i : i + batch_size]
-            batch_preds = (
-                torch.sigmoid(correction_model(batch_inputs, batch_features)) > 0.5
-            )
+            batch_preds = torch.sigmoid(correction_model(batch_inputs, batch_features))
 
             predictions.extend(batch_preds.cpu().numpy())
     for fiber, pred in zip(fibers, predictions):
-        fiber.is_an_error = bool(pred)
+        fiber.proba_error = float(pred)
     progress_bar.empty()
     return fibers

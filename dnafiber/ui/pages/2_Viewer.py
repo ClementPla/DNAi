@@ -15,7 +15,7 @@ from dnafiber.ui.components import (
     show_fibers,
     table_components,
     distribution_analysis,
-    viewer_components,
+    rescale_with_cache,
 )
 from dnafiber.ui.custom.fiber_ui import fiber_ui
 from dnafiber.ui.inference import (
@@ -108,13 +108,12 @@ def start_inference(
         _image=image,
         _device="cuda" if torch.cuda.is_available() else "cpu",
         use_tta=use_tta,
-        prediction_threshold=prediction_threshold,
         pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
         low_end_hardware=st.session_state.get("low_end_hardware", DV.LOW_END_HARDWARE),
         key=inference_id,
     )
-
     prediction = prediction.valid_copy()
+
     if detect_errors:
         with st.spinner("Detecting errors in fibers..."):
             correction_model = get_postprocess_model().to(
@@ -137,7 +136,7 @@ def start_inference(
             help="Toggle the visibility of fibers detected as errors in the viewer and table.",
         )
         if hide_error:
-            prediction = prediction.filtered_copy()
+            prediction = prediction.filter_errors()
     tab_viewer, tab_mosaic, tab_table, tab_distributions = st.tabs(
         ["Viewer", "Mosaic", "Table", "Distribution"]
     )
@@ -149,9 +148,8 @@ def start_inference(
             st.toast(
                 f"Images are displayed at a lower resolution of {max_size} pixel wide"
             )
-        start = time.time()
 
-        rescaled_image, scale = viewer_components(image, prediction, inference_id)
+        rescaled_image, scale = rescale_with_cache(image, inference_id)
         start = time.time()
         selected_fibers_img = fiber_ui(
             rescaled_image,
@@ -161,11 +159,12 @@ def start_inference(
                 color2=st.session_state.get("color2", "green"),
             ),
             pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
+            error_threshold=prediction_threshold,
             key=inference_id,
         )
     for fiber in prediction:
         if fiber.fiber_id in selected_fibers_img:
-            fiber.is_an_error = True
+            fiber.proba_error = 1.0 - fiber.proba_error
     with tab_mosaic:
         prediction_mosaic, image_mosaic = get_mosaic(image, prediction, inference_id)
         selected_fibers = fiber_ui(
@@ -176,11 +175,12 @@ def start_inference(
                 color2=st.session_state.get("color2", "green"),
             ),
             pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
+            error_threshold=prediction_threshold,
             key=inference_id + "_mosaic",
         )
     for fiber in prediction:
         if fiber.fiber_id in selected_fibers:
-            fiber.is_an_error = True
+            fiber.proba_error = 1.0 - fiber.proba_error
 
     st.download_button(
         label="Download Fibers object",
@@ -195,14 +195,9 @@ def start_inference(
         else:
             df = show_fibers(
                 _prediction=prediction,
-                _image=image,
                 inference_id=inference_id,
             )
-            for idx in df.index:
-                if df.at[idx, "Fiber ID"] in selected_fibers + selected_fibers_img:
-                    df.at[idx, "is_valid"] = False
-
-            table_components(df)
+            table_components(df, error_threshold=prediction_threshold)
     with tab_distributions:
         if len(prediction) == 0:
             st.warning("No fibers detected in this image.")
@@ -225,9 +220,9 @@ def start_inference(
             if prepare_download:
                 with st.spinner("Preparing files..."):
                     start = time.time()
-                    labelmap = prediction.filtered_copy().get_labelmap(
-                        org_h, org_w, width
-                    )
+                    labelmap = prediction.filter_errors(
+                        prediction_threshold
+                    ).get_labelmap(org_h, org_w, width)
                     labelmap = CMAP(labelmap, bytes=True)[:, :, :3]
                     labelmap = Image.fromarray(labelmap)
 
@@ -244,9 +239,9 @@ def start_inference(
                         f"Segmentation map is ready! ({time.time() - start:.2f}s)"
                     )
                     start = time.time()
-                    bbox_map = prediction.filtered_copy().get_bounding_boxes_map(
-                        org_h, org_w, width=width, image=image
-                    )
+                    bbox_map = prediction.filter_errors(
+                        prediction_threshold
+                    ).get_bounding_boxes_map(org_h, org_w, width=width, image=image)
                     bbox_map = Image.fromarray(bbox_map)
                     buffer = io.BytesIO()
                     bbox_map.save(buffer, format="jpeg")
@@ -332,7 +327,6 @@ if on_session_start():
         performance_button()
         model_name = model_configuration_inputs()
 
-    # image = blocks[which_y, which_x, 0]
     with st.sidebar:
         st.image(image, caption=f"Current image {w}x{h}", width="stretch")
 

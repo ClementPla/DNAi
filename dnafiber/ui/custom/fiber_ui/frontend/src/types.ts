@@ -8,6 +8,6 @@ export interface Fiber {
   type: string
   points: string[]
   colors: string[]
-  is_error: boolean
+  proba_error: number
   pixel_size: number
 }

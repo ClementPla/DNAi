@@ -20,7 +20,6 @@ def ui_inference(
     _device,
     use_tta=True,
     pixel_size=0.13,
-    prediction_threshold=1 / 3,
     low_end_hardware=False,
     verbose=True,
     key="default",
@@ -86,7 +85,7 @@ def ui_inference(
     st.toast(f"Inference completed in {time.time() - start:.2f} seconds.")
 
     prediction = probas_to_segmentation(
-        probas, prediction_threshold=prediction_threshold
+        probas,
     )
 
     start = time.time()

@@ -75,7 +75,6 @@ def inference(
     device,
     pixel_size,
     use_tta=True,
-    prediction_threshold=1 / 3,
     low_end_hardware=False,
     verbose=True,
     error_detection_model=None,
@@ -91,9 +90,7 @@ def inference(
         low_end_hardware=low_end_hardware,
     )
     with torch.no_grad():
-        output = probas_to_segmentation(
-            output, prediction_threshold=prediction_threshold
-        )
+        output = probas_to_segmentation(output)
 
     if verbose:
         print("Segmentation time:", time.time() - start)

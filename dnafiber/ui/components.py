@@ -16,18 +16,13 @@ from dnafiber.images.mosaic import mosaic
 
 
 @st.cache_data
-def show_fibers(
-    _prediction, _image, inference_id=None, resolution=400, show_errors=True
-):
+def show_fibers(_prediction, inference_id=None):
     return show_fibers_cacheless(
         _prediction,
-        _image,
-        resolution=resolution,
-        show_errors=show_errors,
     )
 
 
-def show_fibers_cacheless(_prediction, _image, resolution=400, show_errors=True):
+def show_fibers_cacheless(_prediction):
     data = dict(
         fiber_id=[],
         firstAnalog=[],
@@ -35,7 +30,7 @@ def show_fibers_cacheless(_prediction, _image, resolution=400, show_errors=True)
         ratio=[],
         fiber_type=[],
         # visualization=[],
-        is_valid=[],
+        proba_error=[],
     )
 
     for fiber in _prediction:
@@ -49,7 +44,7 @@ def show_fibers_cacheless(_prediction, _image, resolution=400, show_errors=True)
             f"{green_length / red_length if red_length > 0 else 0:.3f}"
         )
         data["fiber_type"].append(fiber.fiber_type)
-        data["is_valid"].append(fiber.is_acceptable)
+        data["proba_error"].append(fiber.proba_error)
 
     df = pd.DataFrame(data)
     df = df.rename(
@@ -64,7 +59,7 @@ def show_fibers_cacheless(_prediction, _image, resolution=400, show_errors=True)
     return df
 
 
-def table_components(df):
+def table_components(df, error_threshold):
     event = st.dataframe(
         df,
         on_select="rerun",
@@ -87,7 +82,9 @@ def table_components(df):
     with cols[1]:
         st.download_button(
             "Download valid fibers",
-            data=df[df["is_valid"]][columns].to_csv(index=False).encode("utf-8"),
+            data=df[df["proba_error"] < error_threshold][columns]
+            .to_csv(index=False)
+            .encode("utf-8"),
             file_name=f"fibers_valid.csv",
             mime="text/csv",
         )
@@ -101,7 +98,6 @@ def table_components(df):
 
 
 def distribution_analysis(predictions: Fibers):
-    predictions = predictions.filtered_copy()
     predictions = predictions.only_double_copy()
 
     df = predictions.to_df()
@@ -163,7 +159,7 @@ def distribution_analysis(predictions: Fibers):
 
 
 @st.cache_data(max_entries=5)
-def viewer_components(_image, _prediction, inference_id):
+def rescale_with_cache(_image, inference_id):
     image = _image
     if image.max() > 25:
         image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)

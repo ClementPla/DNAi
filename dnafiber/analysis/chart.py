@@ -258,7 +258,7 @@ def annotate_medians(df, ax, column):
         mid_x = (x1 + x2) / 2
         ax.text(
             mid_x,
-            line_y,
+            line_y + 0.5,
             f"δ={delta:.2f}",
             ha="center",
             va="bottom",

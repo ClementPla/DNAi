@@ -4,6 +4,7 @@ from dnafiber.ui.hardware import create_diagnostics_container, update_diagnostic
 from dnafiber.ui.utils import build_file_id
 from dnafiber.data.utils import load_image, load_multifile_image
 from dnafiber.model.models_zoo import MODELS_ZOO, MODELS_ZOO_R, ENSEMBLE, Models
+from dnafiber.postprocess.types import FiberType
 import pandas as pd
 import plotly.express as px
 
@@ -92,7 +93,7 @@ def plot_result(selected_category):
     clean_df["Image"] = clean_df["image_name"].apply(image_name_to_category)
 
     if only_bilateral:
-        clean_df = clean_df[clean_df["Fiber type"] == "double"]
+        clean_df = clean_df[clean_df["Fiber type"] == FiberType.TWO_SEGMENTS.value]
     if remove_outliers:
         clean_df = clean_df[
             (clean_df["Ratio"] >= min_ratio) & (clean_df["Ratio"] <= max_ratio)
@@ -152,6 +153,7 @@ def infer(
     file,
     model,
     use_tta=DV.USE_TTA,
+    predict_error=DV.USE_CORRECTION,
     prediction_threshold=DV.PREDICTION_THRESHOLD,
     inference_id="",
     low_end_hardware=DV.LOW_END_HARDWARE,
@@ -177,23 +179,24 @@ def infer(
         image,
         _device="cuda" if torch.cuda.is_available() else "cpu",
         use_tta=use_tta,
-        prediction_threshold=prediction_threshold,
         pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
         key=inference_id,
         verbose=True,
         low_end_hardware=low_end_hardware,
     )
-    results = detect_error_with_cache(
-        _fibers=results,
-        _image=image,
-        _correction_model=get_postprocess_model(),
-        _device="cuda" if torch.cuda.is_available() else "cpu",
-        _pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
-        _batch_size=32 if low_end_hardware else 64,
-        key=inference_id,
-    )
-    results = results.filtered_copy()
-    df = show_fibers_cacheless(results, image, resolution=256)
+    if predict_error:
+        print("Detecting errors in fibers...")
+        results = detect_error_with_cache(
+            _fibers=results,
+            _image=image,
+            _correction_model=get_postprocess_model(),
+            _device="cuda" if torch.cuda.is_available() else "cpu",
+            _pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
+            _batch_size=32 if low_end_hardware else 64,
+            key=inference_id,
+        )
+        results = results.filter_errors(prediction_threshold)
+    df = show_fibers_cacheless(results)
     df["image_name"] = filename
     return df
 
@@ -247,6 +250,7 @@ def run_inference(model_name, use_tta=DV.USE_TTA, use_correction=DV.USE_CORRECTI
                 model,
                 use_tta=use_tta,
                 inference_id=inference_id,
+                predict_error=use_correction,
                 prediction_threshold=prediction_threshold,
                 low_end_hardware=st.session_state.get(
                     "low_end_hardware", DV.LOW_END_HARDWARE
@@ -286,10 +290,18 @@ if st.session_state.get("files_uploaded", None):
             run_inference(
                 model_name=model_name,
                 use_tta=st.session_state.get("use_tta", DV.USE_TTA),
+                use_correction=st.session_state.get(
+                    "use_error_detection_model", DV.USE_CORRECTION
+                ),
             )
             st.balloons()
         if st.session_state.get("results", None) is not None:
-            table_components(st.session_state.results)
+            table_components(
+                st.session_state.results,
+                error_threshold=st.session_state.get(
+                    "prediction_threshold", DV.PREDICTION_THRESHOLD
+                ),
+            )
 
     with tab_charts:
         if st.session_state.get("results", None) is not None:
