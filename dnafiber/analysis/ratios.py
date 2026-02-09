@@ -91,13 +91,17 @@ def normalize_df(df, baseline):
     """
     for grader in ["Human", "AI"]:
         # Normalize the ratios by the baseline
-        mean_grader_baseline = df[(df["Type"] == baseline) & (df["Grader"] == grader)][
-            "Ratio"
-        ].median()
-        # Normalize the ratios by the baseline independent of the grader
-        df.loc[df["Grader"] == grader, "Ratio"] = (
-            df.loc[df["Grader"] == grader, "Ratio"] / mean_grader_baseline
-        )
+        median_grader_baseline = df[
+            (df["Type"] == baseline) & (df["Grader"] == grader)
+        ]["Ratio"].median()
+
+        # Get the mask for this grader
+        mask = df["Grader"] == grader
+
+        # Normalize using the mask - more explicit in-place modification
+        df.loc[mask, "Ratio"] = df.loc[mask, "Ratio"] / median_grader_baseline
+
+    return df
 
 
 def pvalue_to_asterisk(p_value):
@@ -226,7 +230,11 @@ def select_N_closest_to_median(df, N=10, column="Ratio"):
             N = df[(df["Type"] == type_) & (df["Grader"] == "Human")].shape[0]
         closest_to_median = group.nsmallest(N, "Distance to median")
         selected_dfs.append(closest_to_median)
-    return pd.concat(selected_dfs, ignore_index=True)
+
+    df = pd.concat(selected_dfs, ignore_index=True)
+    df.sort_values(["Grader"], inplace=True)
+
+    return df
 
 
 def offset_transition(df, offset=0, pixel_size=0.13, symetric=True):

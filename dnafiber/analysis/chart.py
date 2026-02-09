@@ -4,6 +4,7 @@ from dnafiber.analysis.const import palette
 import plotly.express as px
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
 
 
 def get_color_association(df):
@@ -71,6 +72,7 @@ def create_boxen_plot(
     column="Ratio",
     log_scale=True,
     rotate_xticks=45,
+    ax=None,
     **kwargs,
 ):
     sns.boxplot(
@@ -80,16 +82,18 @@ def create_boxen_plot(
         hue="Grader",
         palette=palette,
         linewidth=0.75,
+        ax=ax,
         **kwargs,
     )
     if log_scale:
-        plt.yscale("log")
-        plt.yticks([0.125, 0.25, 0.5, 1, 2, 4, 8], [0.125, 0.25, 0.5, 1, 2, 4, 8])
-    plt.minorticks_off()
-    plt.ylim(*yrange)
-    plt.xticks(rotation=rotate_xticks, ha="right")
-    plt.xlabel("")
-    plt.grid(axis="y", linestyle="--", alpha=0.7)
+        ax.set_yscale("log")
+        ax.set_yticks([0.125, 0.25, 0.5, 1, 2, 4, 8])
+        ax.set_yticklabels([0.125, 0.25, 0.5, 1, 2, 4, 8])
+    ax.minorticks_off()
+    ax.set_ylim(*yrange)
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=rotate_xticks, ha="right")
+    ax.set_xlabel("")
+    ax.grid(axis="y", linestyle="--", alpha=0.7)
 
 
 def create_swarm_plot(
@@ -101,6 +105,7 @@ def create_swarm_plot(
     include_median=True,
     rotate_xticks=45,
     stripplot=False,
+    ax=None,
     **kwargs,
 ):
     if stripplot:
@@ -111,13 +116,14 @@ def create_swarm_plot(
             hue="Grader",
             palette=palette,
             dodge=True,
+            ax=ax,
             **kwargs,
         )
     else:
         sns.swarmplot(
-            data=df, x="Type", y=column, hue="Grader", palette=palette, **kwargs
+            data=df, x="Type", y=column, hue="Grader", palette=palette, ax=ax, **kwargs
         )
-    for c in plt.gca().collections:
+    for c in ax.collections:
         c.set_zorder(1)  # Set the zorder to 1 for all points
     if include_median:
         # Show the median as a horizontal line
@@ -127,7 +133,7 @@ def create_swarm_plot(
                 0.2 if j == 1 else -0.2
             )  # Offset for the median line based on grader
             for i, median in enumerate(median_values):
-                plt.hlines(
+                ax.hlines(
                     median,
                     i + offset - 0.1,
                     i + offset + 0.1,
@@ -136,18 +142,19 @@ def create_swarm_plot(
                     lw=1.5,
                 )
                 # The hlines should be over the points
-                plt.gca().collections[-1].set_zorder(2)
+                ax.collections[-1].set_zorder(2)
 
     if log_scale:
-        plt.yscale("log")
-        plt.yticks([0.125, 0.25, 0.5, 1, 2, 4, 8], [0.125, 0.25, 0.5, 1, 2, 4, 8])
-    plt.minorticks_off()
-    plt.ylim(*yrange)
+        ax.set_yscale("log")
+        ax.set_yticks([0.125, 0.25, 0.5, 1, 2, 4, 8])
+        ax.set_yticklabels([0.125, 0.25, 0.5, 1, 2, 4, 8])
+    ax.minorticks_off()
+    ax.set_ylim(*yrange)
     # Set anchor of xticks to right
-    plt.xticks(rotation=rotate_xticks, ha="right")
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=rotate_xticks, ha="right")
 
-    plt.xlabel("")
-    plt.grid(axis="y", linestyle="--", alpha=0.7)
+    ax.set_xlabel("")
+    ax.grid(axis="y", linestyle="--", alpha=0.7)
 
 
 def create_boxen_swarmplot(
@@ -160,8 +167,15 @@ def create_boxen_swarmplot(
     stripplot=False,
     rotate_xticks=45,
     size=3,
+    ax=None,
+    annotate=False,
     **kwargs,
 ):
+    # Always order the graders in the same way (Human first, then AI)
+    df["Grader"] = pd.Categorical(
+        df["Grader"], categories=["Human", "AI"], ordered=True
+    )
+    df.sort_values("Grader", inplace=True)
     create_boxen_plot(
         df,
         palette=palette,
@@ -172,6 +186,7 @@ def create_boxen_swarmplot(
         notch=True,
         boxprops=dict(alpha=0.5),
         column=column,
+        ax=ax,
         **kwargs,
     )
     create_swarm_plot(
@@ -187,19 +202,75 @@ def create_boxen_swarmplot(
         size=size,
         # jitter=0.1,
         #
+        ax=ax,
         legend=False,
         **kwargs,
     )
+    if ax is None:
+        ax = plt.gca()
     if color_label is not None:
-        for label in plt.gca().get_xticklabels():
+        for label in ax.get_xticklabels():
             if label.get_text() == color_label:
                 label.set_color("red")
                 label.set_fontweight("bold")
 
-    return plt.gcf()
+    if annotate:
+        annotate_medians(df, ax, column)
 
 
-def create_violin_plot(df, palette):
+def annotate_medians(df, ax, column):
+    # Calculate medians for each Type-Grader combination
+    medians = df.groupby(["Type", "Grader"])[column].median().unstack()
+
+    # Get types in the SAME ORDER as they appear in the plot
+    types = [label.get_text() for label in ax.get_xticklabels()]
+    graders = df["Grader"].cat.categories  # Use categorical order
+
+    # Calculate positions for dodged points
+    n_graders = len(graders)
+    offsets = np.linspace(-0.2, 0.2, n_graders)
+
+    for i, type_val in enumerate(types):
+        # Get median values for both graders
+        med1 = medians.loc[type_val, graders[0]]
+        med2 = medians.loc[type_val, graders[1]]
+
+        # Calculate x positions
+        x1 = i + offsets[0]
+        x2 = i + offsets[1]
+
+        # Calculate delta
+        delta = med2 - med1
+
+        # Draw line at a fixed height above the plot
+        line_y = max(med1, med2) + 3.5
+        ax.plot(
+            [x1, x2],
+            [line_y, line_y],
+            color="black",
+            linewidth=1.0,
+            linestyle="-",
+            alpha=0.7,
+            zorder=10,
+        )
+
+        # Add text annotation
+        mid_x = (x1 + x2) / 2
+        ax.text(
+            mid_x,
+            line_y,
+            f"δ={delta:.2f}",
+            ha="center",
+            va="bottom",
+            fontsize=8,
+            color="black",
+            bbox=dict(
+                boxstyle="round,pad=0.3", facecolor="white", edgecolor="gray", alpha=0.8
+            ),
+        )
+
+
+def create_violin_plot(df, palette, ax=None):
     len_graders = len(df["Grader"].unique())
     if len_graders != 2:
         sns.violinplot(
@@ -212,6 +283,7 @@ def create_violin_plot(df, palette):
             saturation=1.0,
             gap=0.1,
             linewidth=0.75,
+            ax=ax,
         )
     else:
         sns.violinplot(
@@ -225,19 +297,21 @@ def create_violin_plot(df, palette):
             saturation=1.0,
             gap=0.01,
             linewidth=0.75,
+            ax=ax,
         )
 
     # The yscale should be log
     # The y ticks should be in powers of 2 (0.125, 0.25, 0.5, 1, 2, 4, 8)
-    plt.yscale("log")
-    plt.yticks([0.125, 0.25, 0.5, 1, 2, 4, 8], [0.125, 0.25, 0.5, 1, 2, 4, 8])
+    ax.set_yscale("log")
+    ax.set_yticks([0.125, 0.25, 0.5, 1, 2, 4, 8])
+    ax.set_yticklabels([0.125, 0.25, 0.5, 1, 2, 4, 8])
     # The y range should be from 0.125 to 8
     # Remove minor ticks
-    plt.minorticks_off()
-    plt.ylim(0.125, 10)
+    ax.minorticks_off()
+    ax.set_ylim(0.125, 10)
 
     # Change the background color of the plot to white
-    plt.xticks(rotation=45)
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45)
     # Remove x label
-    plt.xlabel("")
-    plt.grid(axis="y", linestyle="--", alpha=0.7)
+    ax.set_xlabel("")
+    ax.grid(axis="y", linestyle="--", alpha=0.7)

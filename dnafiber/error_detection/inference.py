@@ -20,7 +20,8 @@ def detect_error(
     verbose=True,
 ) -> "Fibers":
     """Detect errors in the fibers using the correction model."""
-
+    if len(fibers) == 0:
+        return fibers
     crops = get_crops(
         image, fibers, bbox_inflate=4.0, resize=224, return_masks=True, verbose=verbose
     )

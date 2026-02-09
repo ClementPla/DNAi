@@ -70,7 +70,7 @@ def load_dataframe(
         if len(fiber_preds) == 0:
             continue
         img_name = pred_file.stem
-        df_pred = fiber_preds.only_double_copy().to_df()
+        df_pred = fiber_preds.only_double_copy().filtered_copy().to_df()
         df_pred["Type"] = img_name.split("-0")[0]
 
         if df_preds is None:
@@ -94,4 +94,10 @@ def load_dataframe(
         df_all["Type"] = df_all["Type"].apply(rename_map)
 
     df_all.drop(["Fiber ID", "Valid"], axis=1, inplace=True, errors="ignore")
+    # Convert Type to categorical and order by the median length of each type
+    type_order = (
+        df_all.groupby("Type")["Length"].median().sort_values(ascending=True).index
+    )
+    df_all["Type"] = pd.Categorical(df_all["Type"], categories=type_order, ordered=True)
+    df_all.sort_values("Type", inplace=True)
     return df_all

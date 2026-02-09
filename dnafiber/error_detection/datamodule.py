@@ -98,12 +98,15 @@ class ErrorDetectionDataset(Dataset):
         label = self.get_gt(index)
         features = self.get_features(index)
 
+        def normalize(x):
+            return (x - x.min()) / (x.max() - x.min() + 1e-8)
+
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-        axes[0].imshow(vis_img)
+        axes[0].imshow(normalize(vis_img))
         axes[0].set_title("Image")
         axes[1].imshow(mask, cmap=CMAP_NO_ALPHA, interpolation="nearest")
         axes[1].set_title("Mask")
-        axes[2].imshow(vis_img * 0.5)
+        axes[2].imshow(normalize(vis_img) * 0.5)
         axes[2].imshow(mask, cmap=CMAP, interpolation="nearest")
         axes[2].set_title(f"Overlay - Label: {'Error' if label == 1 else 'No Error'}")
         for ax in axes:
