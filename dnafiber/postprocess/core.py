@@ -376,22 +376,21 @@ def extract_fibers(
         local_fiber = local_binary_fiber * local_fiber
         local_fibers.append(local_fiber)
         coordinates.append(np.asarray([x1, y1, w, h]))
-
-        # Calculate endpoint correction
-        correction = 0
-        # Find endpoints in local coordinates
         endpoints = find_endpoints(local_binary_fiber)
-        if endpoint_correction:
-            # Compute the average distance at endpoints
-            distances = []
+
+        if endpoint_correction and endpoints:
+            red_corr, green_corr = 0.0, 0.0
             for y, x in endpoints:
-                distances.append(2 * dist_transform[y, x])
-
-            if distances:
-                correction = int(np.mean(distances))
-
+                radius = dist_transform[y, x]
+                color = local_fiber[y, x]
+                if color == 1:
+                    red_corr += radius
+                elif color == 2:
+                    green_corr += radius
+            correction = (red_corr, green_corr)
+        else:
+            correction = (0.0, 0.0)
         endpoint_corrections.append(correction)
-
         local_junctions = find_line_intersection(local_binary_fiber)
         local_junctions = np.where(local_junctions)
         local_junctions = np.array(local_junctions).transpose()

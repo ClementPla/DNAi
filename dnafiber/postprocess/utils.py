@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import numpy as np
 from typing import TYPE_CHECKING
+from scipy.optimize import linear_sum_assignment
 
 if TYPE_CHECKING:
-    from dnafiber.postprocess.fiber import FiberProps
+    from dnafiber.postprocess.fiber import FiberProps, Fibers
 
 
 def generate_svg(fiber: FiberProps, scale=1.0, color1="red", color2="green") -> str:
@@ -69,3 +70,27 @@ def generate_svg(fiber: FiberProps, scale=1.0, color1="red", color2="green") -> 
     )
 
     return json.dumps(bbox_data)
+
+
+def match_fibers_pairs(
+    fibers1: Fibers, fibers2: Fibers, overlap_ratio=10
+) -> list[tuple[FiberProps, FiberProps]]:
+    n, m = len(fibers1), len(fibers2)
+    if n == 0 or m == 0:
+        return []
+
+    # Build IoU matrix (or use negative for cost)
+    iou_matrix = np.zeros((n, m))
+    for i, fiber in enumerate(fibers1):
+        for j, other_fiber in enumerate(fibers2):
+            iou_matrix[i, j] = fiber.bbox_iou(other_fiber)
+
+    # Hungarian on negative IoU (minimize cost = maximize IoU)
+    row_ind, col_ind = linear_sum_assignment(-iou_matrix)
+
+    pairs = []
+    for i, j in zip(row_ind, col_ind):
+        if iou_matrix[i, j] >= overlap_ratio:  # Only keep pairs above threshold
+            pairs.append((fibers1[i], fibers2[j]))
+
+    return pairs

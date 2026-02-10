@@ -85,6 +85,8 @@ def create_boxen_plot(
         ax=ax,
         **kwargs,
     )
+    if ax is None:
+        ax = plt.gca()
     if log_scale:
         ax.set_yscale("log")
         ax.set_yticks([0.125, 0.25, 0.5, 1, 2, 4, 8])
@@ -123,6 +125,8 @@ def create_swarm_plot(
         sns.swarmplot(
             data=df, x="Type", y=column, hue="Grader", palette=palette, ax=ax, **kwargs
         )
+    if ax is None:
+        ax = plt.gca()
     for c in ax.collections:
         c.set_zorder(1)  # Set the zorder to 1 for all points
     if include_median:
@@ -216,6 +220,7 @@ def create_boxen_swarmplot(
 
     if annotate:
         annotate_medians(df, ax, column)
+    return plt.gcf()
 
 
 def annotate_medians(df, ax, column):

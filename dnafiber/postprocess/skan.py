@@ -5,7 +5,7 @@ import itertools
 from numba import njit, int64
 from numba.typed import List
 from numba.types import Tuple
-
+from dnafiber.postprocess.types import FiberType
 import numba
 
 
@@ -683,3 +683,27 @@ def prolongate_endpoints(image, skeleton, segmentation, max_search=75, threshold
             fill_path(segmentation, path, label)
 
     return segmentation, (segmentation > 0).astype(np.uint8)
+
+
+def estimate_fiber_category(fiber_trace: np.ndarray, fiber_data: np.ndarray) -> str:
+    """
+    Estimate the fiber category based on the number of red and green pixels.
+    """
+    coordinates = fiber_trace
+    coordinates = np.asarray(coordinates)
+    try:
+        values = fiber_data[coordinates[:, 0], coordinates[:, 1]]
+    except IndexError:
+        return "unknown"
+    diff = np.diff(values)
+    jump = np.sum(diff != 0)
+    n_ccs = jump + 1
+    if n_ccs == 2:
+        return FiberType.TWO_SEGMENTS
+    elif n_ccs == 3:
+        if values[0] == 1:
+            return FiberType.ONE_TWO_ONE
+        else:
+            return FiberType.TWO_ONE_TWO
+    else:
+        return FiberType.OTHER

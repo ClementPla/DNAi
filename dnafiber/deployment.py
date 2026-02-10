@@ -19,7 +19,6 @@ def run_one_file(
     model,
     reverse_channels=False,
     pixel_size=0.13,
-    prediction_threshold=1 / 3,
     use_tta=True,
     verbose=True,
     low_end_hardware=False,
@@ -61,7 +60,6 @@ def run_one_file(
         device="cuda" if is_cuda_available else "cpu",
         use_tta=use_tta,
         low_end_hardware=low_end_hardware,
-        prediction_threshold=prediction_threshold,
         verbose=verbose,
         error_detection_model=error_detection_model,
     )

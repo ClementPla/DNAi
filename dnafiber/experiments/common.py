@@ -58,6 +58,7 @@ def load_dataframe(
     root_gt: Path | str,
     rename_map_gt: Optional[callable] = None,
     rename_map: Optional[callable] = default_map_condition_name,
+    error_threshold: Optional[float] = None,
 ) -> pd.DataFrame:
     root_pred = Path(root_pred)
     root_gt = Path(root_gt)
@@ -70,7 +71,10 @@ def load_dataframe(
         if len(fiber_preds) == 0:
             continue
         img_name = pred_file.stem
-        df_pred = fiber_preds.only_double_copy().filtered_copy().to_df()
+        fiber_preds = fiber_preds.only_double_copy()
+        if error_threshold is not None:
+            fiber_preds = fiber_preds.filter_errors(error_threshold)
+        df_pred = fiber_preds.to_df(img_name=img_name, pixel_size=0.13)
         df_pred["Type"] = img_name.split("-0")[0]
 
         if df_preds is None:

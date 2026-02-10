@@ -2,15 +2,18 @@ import attrs
 from matplotlib.collections import LineCollection
 import numpy as np
 from typing import Optional, Tuple
-from dnafiber.postprocess.skan import trace_skeleton, compute_trace_curvature
+from dnafiber.postprocess.skan import (
+    trace_skeleton,
+    compute_trace_curvature,
+    estimate_fiber_category,
+)
 from skimage.segmentation import expand_labels
-from dnafiber.postprocess.utils import generate_svg
+from dnafiber.postprocess.utils import generate_svg, match_fibers_pairs
 import pickle
 import cv2
 from pathlib import Path
 import matplotlib.pyplot as plt
 from dnafiber.data.consts import CMAP
-from scipy.optimize import linear_sum_assignment
 from dnafiber.postprocess.types import FiberType
 
 
@@ -62,16 +65,8 @@ class FiberProps:
     proba_error: float = 0.0
     svg_rep: str = None  # SVG representation of the fiber, for visualization purposes
     trace: np.ndarray = None  # Coordinates of the skeletons of the fiber
-    endpoint_correction: float = 0.0  # NEW: pixels to add for endpoint caps
+    endpoint_correction: Tuple[float, float] = (0.0, 0.0)  # (red_extra, green_extra)
     curvature: float = None  # Cached curvature value
-
-    @property
-    def bbox(self):
-        return self.bbox.bbox
-
-    @bbox.setter
-    def bbox(self, value):
-        self.bbox = value
 
     @property
     def data(self):
@@ -102,9 +97,8 @@ class FiberProps:
         if self.red_pixels is None or self.green_pixels is None:
             red_raw = np.sum(self.data == 1)
             green_raw = np.sum(self.data == 2)
-            self.red_pixels = red_raw
-            self.green_pixels = green_raw
-
+            self.red_pixels = red_raw + self.endpoint_correction[0]
+            self.green_pixels = green_raw + self.endpoint_correction[1]
         return self.red_pixels, self.green_pixels
 
     @property
@@ -286,7 +280,7 @@ class FiberProps:
             lc = LineCollection(segments, colors=colors[:-1], linewidth=linewidth)
             ax.add_collection(lc)
         ax.set_title(
-            f"Fiber ID: {self.fiber_id}, Type: {self.fiber_type.value}, Red: {self.red}, Green: {self.green}, Ratio: {self.ratio:.2f}, Is error: {self.is_an_error}"
+            f"Fiber ID: {self.fiber_id}, Type: {self.fiber_type.value}, Red: {self.red}, Green: {self.green}, Ratio: {self.ratio:.2f}, Proba error: {self.proba_error:.2f}"
         )
         if with_features:
             curvature = self.get_curvature()
@@ -454,34 +448,8 @@ class Fibers:
                     (intersection.append((fiber, other_fiber)))
         return intersection
 
-    def order_as(self, other, ratio=0.5):
-        result = Fibers([])
-        for i, other_fiber in enumerate(other.fibers):
-            for fiber in self.fibers:
-                if fiber.bbox_intersect(other_fiber, ratio=ratio):
-                    result.append_if_not_exists(fiber, ratio=ratio)
-        return result
-
     def matched_pairs(self, other, ratio=0.5) -> list[Tuple[FiberProps, FiberProps]]:
-        n, m = len(self.fibers), len(other.fibers)
-        if n == 0 or m == 0:
-            return []
-
-        # Build IoU matrix (or use negative for cost)
-        iou_matrix = np.zeros((n, m))
-        for i, fiber in enumerate(self.fibers):
-            for j, other_fiber in enumerate(other.fibers):
-                iou_matrix[i, j] = fiber.bbox_iou(other_fiber)
-
-        # Hungarian on negative IoU (minimize cost = maximize IoU)
-        row_ind, col_ind = linear_sum_assignment(-iou_matrix)
-
-        pairs = []
-        for i, j in zip(row_ind, col_ind):
-            if iou_matrix[i, j] >= ratio:  # Only keep pairs above threshold
-                pairs.append((self.fibers[i], other.fibers[j]))
-
-        return pairs
+        return match_fibers_pairs(self, other, overlap_ratio=ratio)
 
     def to_df(
         self, pixel_size=0.13, img_name: Optional[str] = None, filter_invalid=True
@@ -495,12 +463,13 @@ class Fibers:
             "Ratio": [],
             "Fiber type": [],
             "Valid": [],
+            "Error probability": [],
         }
 
         for i, fiber in enumerate(self.fibers):
             if filter_invalid and not fiber.is_valid:
                 continue
-            data["Fiber ID"].append(i)
+            data["Fiber ID"].append(fiber.fiber_id)
             r, g = fiber.counts
             red_length = pixel_size * r
             green_length = pixel_size * g
@@ -509,6 +478,7 @@ class Fibers:
             data["Ratio"].append(fiber.ratio)
             data["Fiber type"].append(fiber.fiber_type)
             data["Valid"].append(fiber.is_valid)
+            data["Error probability"].append(fiber.proba_error)
         df = pd.DataFrame.from_dict(data)
         if img_name:
             df["Image Name"] = img_name
@@ -579,31 +549,8 @@ class Fibers:
                 data=fiber.data,
                 fiber_id=fiber.fiber_id,
                 proba_error=fiber.proba_error,
+                endpoint_correction=fiber.endpoint_correction,
             )
             for fiber in self.fibers
         ]
         return Fibers(copied_fibers, path=self.path)
-
-
-def estimate_fiber_category(fiber_trace: np.ndarray, fiber_data: np.ndarray) -> str:
-    """
-    Estimate the fiber category based on the number of red and green pixels.
-    """
-    coordinates = fiber_trace
-    coordinates = np.asarray(coordinates)
-    try:
-        values = fiber_data[coordinates[:, 0], coordinates[:, 1]]
-    except IndexError:
-        return "unknown"
-    diff = np.diff(values)
-    jump = np.sum(diff != 0)
-    n_ccs = jump + 1
-    if n_ccs == 2:
-        return FiberType.TWO_SEGMENTS
-    elif n_ccs == 3:
-        if values[0] == 1:
-            return FiberType.ONE_TWO_ONE
-        else:
-            return FiberType.TWO_ONE_TWO
-    else:
-        return FiberType.OTHER
