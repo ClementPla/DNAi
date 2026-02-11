@@ -320,3 +320,199 @@ def create_violin_plot(df, palette, ax=None):
     # Remove x label
     ax.set_xlabel("")
     ax.grid(axis="y", linestyle="--", alpha=0.7)
+
+
+def draw_protocol_arrows(
+    ax,
+    pretreatment: dict | None = None,
+    analogs: list[dict] = None,
+    post_treatment: dict | None = None,
+):
+    """
+    Draw a protocol diagram with incubation arrows on a given matplotlib Axes.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+    pretreatment : dict or None
+        Keys: "label" (str), "duration_min" (float, total duration in minutes),
+        "color" (str), "duration" (str, display label e.g. "3h").
+        Drawn below the analog arrows. Its arrow ENDS at the end of the last analog
+        and extends left proportionally to its duration.
+    analogs : list of dict
+        Each dict has keys: "label" (str), "duration" (str, display label),
+        "duration_min" (float, duration in minutes), "color" (str).
+    post_treatment : dict or None
+        Keys: "label" (str), "duration" (str), "color" (str),
+        optionally "prefix" (str, e.g. "+/-").
+    """
+    import matplotlib.patches as mpatches
+
+    if analogs is None:
+        analogs = []
+
+    ax.set_xlim(0, 10)
+    ax.set_ylim(-0.3, 1.1)
+    ax.axis("off")
+
+    # Layout parameters
+    y_arrows = 0.5
+    arrow_height = 0.20
+    thin_arrow_height = 0.12
+    gap = 0.0
+    analog_arrow_width = 1.8
+    pt_width = 1.0
+    time_y = y_arrows + arrow_height * 1.4 / 2 + 0.08
+
+    # --- Analog arrows ---
+    x_analog_start = 3.0
+    x_cursor = x_analog_start
+
+    # Total visual width for all analogs, then distribute proportionally
+    total_analog_visual = 3.6  # total visual width budget for all analogs
+    analog_total_min = sum(a.get("duration_min", 30) for a in analogs)
+
+    for analog in analogs:
+        dur = analog.get("duration_min", 30)
+        analog_arrow_width = total_analog_visual * (dur / analog_total_min)
+        color = analog.get("color", "red")
+        arrow = mpatches.FancyArrow(
+            x_cursor,
+            y_arrows,
+            analog_arrow_width,
+            0,
+            width=arrow_height,
+            head_width=arrow_height * 1.4,
+            length_includes_head=True,
+            head_length=0.2,
+            fc=color,
+            ec="none",
+        )
+        ax.add_patch(arrow)
+        ax.text(
+            x_cursor + analog_arrow_width / 2,
+            time_y,
+            analog.get("duration", ""),
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
+        ax.text(
+            x_cursor + analog_arrow_width / 2 - 0.1,
+            y_arrows,
+            analog.get("label", ""),
+            ha="center",
+            va="center",
+            fontsize=9,
+            fontweight="bold",
+            color="white",
+        )
+        x_cursor += analog_arrow_width
+
+    x_end_analogs = x_cursor
+
+    # --- Dotted vertical separator + post-treatment ---
+    if post_treatment is not None:
+        sep_x = x_end_analogs + gap / 2 + 0.15
+        ax.plot(
+            [sep_x, sep_x],
+            [
+                y_arrows - arrow_height * 1.4 / 2 - 0.15,
+                y_arrows + arrow_height * 1.4 / 2 + 0.25,
+            ],
+            linestyle=":",
+            color="black",
+            linewidth=1.2,
+        )
+        x_pt_start = sep_x + 0.15
+        color = post_treatment.get("color", "blue")
+        arrow = mpatches.FancyArrow(
+            x_pt_start,
+            y_arrows,
+            pt_width,
+            0,
+            width=thin_arrow_height,
+            head_width=thin_arrow_height * 1.4,
+            length_includes_head=True,
+            head_length=0.12,
+            fc=color,
+            ec="none",
+        )
+        ax.add_patch(arrow)
+        prefix = post_treatment.get("prefix", "")
+        if prefix:
+            ax.text(
+                x_pt_start - 0.05,
+                y_arrows,
+                prefix,
+                ha="right",
+                va="center",
+                fontsize=9,
+            )
+        ax.text(
+            x_pt_start + pt_width / 2,
+            time_y,
+            post_treatment.get("duration", ""),
+            ha="center",
+            va="bottom",
+            fontsize=9,
+        )
+        ax.text(
+            x_pt_start + pt_width / 2,
+            y_arrows - thin_arrow_height / 2 - 0.08,
+            post_treatment.get("label", ""),
+            ha="center",
+            va="top",
+            fontsize=9,
+            fontweight="bold",
+        )
+
+    # --- Pretreatment bar (below analogs, ending at x_end_analogs) ---
+    if pretreatment is not None:
+        y_pre = y_arrows - arrow_height * 1.4 / 2 - 0.22
+        bar_height = 0.10
+
+        # Compute how much wider the pretreatment is vs the analog section
+        analog_total_min = sum(a.get("duration_min", 30) for a in analogs)
+        pre_total_min = pretreatment.get("duration_min", analog_total_min)
+        analogs_visual_width = x_end_analogs - x_analog_start
+        # Scale: 1 minute = analogs_visual_width / analog_total_min in visual units
+        pre_visual_width = analogs_visual_width * (pre_total_min / analog_total_min)
+
+        # Pretreatment ends at x_end_analogs, starts earlier
+        x_pre_start = x_end_analogs - pre_visual_width
+        color = pretreatment.get("color", "grey")
+
+        arrow = mpatches.FancyArrow(
+            x_pre_start,
+            y_pre,
+            pre_visual_width,
+            0,
+            width=bar_height,
+            length_includes_head=True,
+            head_width=bar_height * 1.3,
+            head_length=0.12,
+            fc=color,
+            ec="none",
+            alpha=0.6,
+        )
+        ax.add_patch(arrow)
+        # Duration label to the left of the bar
+        ax.text(
+            x_pre_start + pre_visual_width / 2,
+            y_pre + bar_height / 2 + 0.07,
+            pretreatment.get("duration", ""),
+            ha="right",
+            va="center",
+            fontsize=9,
+            fontweight="bold",
+        )
+        # Label below the bar
+        ax.text(
+            x_pre_start + pre_visual_width / 2,
+            y_pre - bar_height / 2 - 0.07,
+            pretreatment.get("label", ""),
+            ha="center",
+            va="top",
+            fontsize=9,
+        )

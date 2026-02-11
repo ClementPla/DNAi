@@ -24,8 +24,7 @@ from dnafiber.ui.components import (
     table_components,
 )
 from dnafiber.ui.utils import build_inference_id
-from dnafiber.ui import DefaultValues as DV
-
+from dnafiber.ui.consts import DefaultValues as DV
 from dnafiber.ui.utils import retain_session_state
 
 retain_session_state(st.session_state)

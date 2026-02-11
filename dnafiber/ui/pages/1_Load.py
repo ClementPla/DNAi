@@ -1,6 +1,6 @@
 import streamlit as st
 from pathlib import Path
-from dnafiber.ui import DefaultValues as DV
+from dnafiber.ui.consts import DefaultValues as DV
 from dnafiber.ui.components import (
     performance_button,
     pixel_size_input,

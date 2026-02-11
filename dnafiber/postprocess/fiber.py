@@ -223,7 +223,7 @@ class FiberProps:
         other_area = w2 * h2
         return (
             intersection_area / float(self_area + other_area - intersection_area)
-            >= ratio
+            > ratio
         )
 
     def bbox_iou(self, other) -> float:

@@ -1,5 +1,3 @@
-import math
-
 import cv2
 import numpy as np
 import pandas as pd
@@ -8,7 +6,7 @@ import plotly.graph_objects as go
 from dnafiber.model.models_zoo import MODELS_ZOO, MODELS_ZOO_R, Models
 from dnafiber.postprocess.fiber import Fibers
 
-from dnafiber.ui import DefaultValues as DV
+from dnafiber.ui.consts import DefaultValues as DV
 import torch
 import plotly.express as px
 

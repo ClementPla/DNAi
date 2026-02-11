@@ -31,7 +31,7 @@ from dnafiber.ui.utils import (
     get_multifile_image,
     get_resized_image,
 )
-from dnafiber.ui import DefaultValues as DV
+from dnafiber.ui.consts import DefaultValues as DV
 from dnafiber.ui.utils import retain_session_state, create_display_files
 from dnafiber.ui.hardware import sidebar_diagnostics
 
