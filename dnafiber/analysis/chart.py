@@ -5,6 +5,15 @@ import plotly.express as px
 import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
+from scipy.stats import pearsonr, spearmanr
+from dnafiber.analysis.const import Grader
+
+import warnings
+
+# Filter userwarning from matplotlib about log scale and non-positive values
+warnings.filterwarnings("ignore", category=UserWarning, module="matplotlib")
+warnings.filterwarnings("ignore", message="set_ticklabels.*FixedLocator")
+warnings.filterwarnings("ignore", message="FigureCanvasAgg is non-interactive")
 
 
 def get_color_association(df):
@@ -93,7 +102,7 @@ def create_boxen_plot(
         ax.set_yticklabels([0.125, 0.25, 0.5, 1, 2, 4, 8])
     ax.minorticks_off()
     ax.set_ylim(*yrange)
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=rotate_xticks, ha="right")
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=rotate_xticks, ha="center")
     ax.set_xlabel("")
     ax.grid(axis="y", linestyle="--", alpha=0.7)
 
@@ -155,7 +164,7 @@ def create_swarm_plot(
     ax.minorticks_off()
     ax.set_ylim(*yrange)
     # Set anchor of xticks to right
-    ax.set_xticklabels(ax.get_xticklabels(), rotation=rotate_xticks, ha="right")
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=rotate_xticks, ha="center")
 
     ax.set_xlabel("")
     ax.grid(axis="y", linestyle="--", alpha=0.7)
@@ -173,13 +182,21 @@ def create_boxen_swarmplot(
     size=3,
     ax=None,
     annotate=False,
+    ylabel=None,
     **kwargs,
 ):
     # Always order the graders in the same way (Human first, then AI)
-    df["Grader"] = pd.Categorical(
-        df["Grader"], categories=["Human", "AI"], ordered=True
-    )
-    df.sort_values("Grader", inplace=True)
+    if len(df["Grader"].unique()) == 2:
+        df["Grader"] = pd.Categorical(
+            df["Grader"], categories=[Grader.HUMAN, Grader.AI], ordered=True
+        )
+    elif len(df["Grader"].unique()) == 3:
+        df["Grader"] = pd.Categorical(
+            df["Grader"],
+            categories=[Grader.HUMAN, Grader.AI, Grader.OTHER],
+            ordered=True,
+        )
+    df.sort_values(["Grader"], inplace=True)
     create_boxen_plot(
         df,
         palette=palette,
@@ -217,10 +234,124 @@ def create_boxen_swarmplot(
             if label.get_text() == color_label:
                 label.set_color("red")
                 label.set_fontweight("bold")
-
+    if ylabel is not None:
+        ax.set_ylabel(ylabel)
     if annotate:
         annotate_medians(df, ax, column)
     return plt.gcf()
+
+
+def highlight_disagreements(ax, df, disagreement_types, color="#FFCCCC", alpha=0.3):
+    """Add background shading behind disagreement types on a categorical axis."""
+    # Get the x-tick labels and their positions
+    types = [t.get_text() for t in ax.get_xticklabels()]
+
+    for typ in disagreement_types:
+        if typ in types:
+            idx = types.index(typ)
+            ax.axvspan(idx - 0.5, idx + 0.5, color=color, alpha=alpha, zorder=0)
+
+    # Add a single legend entry for the shading
+    from matplotlib.patches import Patch
+
+    existing_handles, existing_labels = ax.get_legend_handles_labels()
+    shading_patch = Patch(facecolor=color, alpha=alpha, label="Grader disagreement")
+    ax.legend(
+        handles=existing_handles + [shading_patch],
+        labels=existing_labels + ["Grader disagreement"],
+    )
+
+
+def add_disagreement_brackets(
+    ax,
+    df_results,
+    disagreement_types,
+    type_order,
+    reference_type,
+    y_start=None,
+    bracket_spacing_factor=1.12,
+    bracket_height_factor=1.03,
+):
+    """
+    Draw brackets from reference_type to each disagreement type, stacked vertically.
+    Spacing is multiplicative to work correctly on log-scale axes.
+
+    Parameters
+    ----------
+    ax : matplotlib Axes
+    df_results : DataFrame from find_grader_disagreements_cliff
+    disagreement_types : list of Type names to annotate
+    type_order : list of all Type names in x-axis order
+    reference_type : the reference Type name
+    y_start : y position for the first bracket (default: auto)
+    bracket_spacing_factor : multiplicative factor between stacked brackets
+    bracket_height_factor : multiplicative height of the bracket tip
+    """
+    if y_start is None:
+        y_start = ax.get_ylim()[1] * 1.1
+
+    ref_idx = type_order.index(reference_type)
+    graders = [
+        c.replace("delta_", "") for c in df_results.columns if c.startswith("delta_")
+    ]
+
+    # Sort by distance to reference so shorter brackets are drawn first (bottom)
+    sorted_types = sorted(
+        disagreement_types, key=lambda t: abs(type_order.index(t) - ref_idx)
+    )
+
+    for i, typ in enumerate(sorted_types):
+        row = df_results[df_results["Type"] == typ].iloc[0]
+        typ_idx = type_order.index(typ)
+
+        left = min(ref_idx, typ_idx) + 0.1
+        right = max(ref_idx, typ_idx) - 0.1
+
+        # Multiplicative spacing for log scale
+        y_base = y_start * (bracket_spacing_factor**i)
+        y_top = y_base * bracket_height_factor
+
+        # Draw bracket
+        ax.plot(
+            [left, left, right, right],
+            [y_base, y_top, y_top, y_base],
+            color="dimgray",
+            linewidth=1.0,
+            clip_on=False,
+        )
+
+        # Build annotation
+        lines = []
+        for grader in graders:
+            d = row[f"delta_{grader}"]
+            ci_lo = row[f"ci_low_{grader}"]
+            ci_hi = row[f"ci_high_{grader}"]
+            ez = row[f"excludes_zero_{grader}"]
+            marker = "●" if ez else "○"
+            lines.append(f"{grader}: {marker} δ={d:.2f} [{ci_lo:.2f}, {ci_hi:.2f}]")
+
+        text = "\n".join(lines)
+        mid_x = (left + right) / 2
+
+        ax.annotate(
+            text,
+            xy=(mid_x, y_top),
+            xytext=(0, 3),
+            textcoords="offset points",
+            ha="center",
+            va="bottom",
+            fontsize=5.5,
+            fontstyle="italic",
+            color="dimgray",
+            clip_on=False,
+        )
+
+    # Adjust ylim to make room
+    top_y = (
+        y_start * (bracket_spacing_factor ** len(sorted_types)) * bracket_spacing_factor
+    )
+    current_ylim = ax.get_ylim()
+    ax.set_ylim(top=max(current_ylim[1], top_y))
 
 
 def annotate_medians(df, ax, column):
@@ -351,25 +482,36 @@ def draw_protocol_arrows(
     if analogs is None:
         analogs = []
 
-    ax.set_xlim(0, 10)
-    ax.set_ylim(-0.3, 1.1)
-    ax.axis("off")
+    ax.set_xticks([])  # Remove x-ticks
+    ax.set_yticks([])  # Remove y-ticks
+    ax.set_xlabel("")  # Ensure no label
+    ax.spines["bottom"].set_visible(False)  # Optional: hide the bottom line
 
     # Layout parameters
     y_arrows = 0.5
     arrow_height = 0.20
-    thin_arrow_height = 0.12
+    thin_arrow_height = 0.15
     gap = 0.0
     analog_arrow_width = 1.8
     pt_width = 1.0
-    time_y = y_arrows + arrow_height * 1.4 / 2 + 0.08
+    time_y = y_arrows + arrow_height / 2
 
-    # --- Analog arrows ---
-    x_analog_start = 3.0
+    margin = 0.5
+    x_start = margin
+
+    # Budget the full width
+    available = 10.0 - 2 * margin
+    if post_treatment is not None:
+        pt_width = available * 0.15  # 15% for post-treatment
+        sep_gap = 0.3
+        total_analog_visual = available - pt_width - sep_gap
+    else:
+        total_analog_visual = available
+
+    x_analog_start = x_start
     x_cursor = x_analog_start
 
     # Total visual width for all analogs, then distribute proportionally
-    total_analog_visual = 3.6  # total visual width budget for all analogs
     analog_total_min = sum(a.get("duration_min", 30) for a in analogs)
 
     for analog in analogs:
@@ -383,8 +525,8 @@ def draw_protocol_arrows(
             0,
             width=arrow_height,
             head_width=arrow_height * 1.4,
+            head_length=min(analog_arrow_width * 0.2, 1),
             length_includes_head=True,
-            head_length=0.2,
             fc=color,
             ec="none",
         )
@@ -407,6 +549,29 @@ def draw_protocol_arrows(
             fontweight="bold",
             color="white",
         )
+        event = analog.get("event_before", None)
+        if event is not None:
+            arrow_start_y = y_arrows - arrow_height * 1.4 / 2 - 0.15
+            ax.annotate(
+                "",
+                xy=(x_cursor, y_arrows),  # head at center of analog
+                xytext=(x_cursor, arrow_start_y),  # starts below
+                arrowprops=dict(
+                    arrowstyle="->",
+                    color=event.get("color", "black"),
+                    lw=1.5,
+                ),
+            )
+            ax.text(
+                x_cursor,
+                arrow_start_y - 0.05,
+                event.get("label", ""),
+                ha="center",
+                va="top",
+                fontsize=8,
+                fontweight="bold",
+                color=event.get("color", "black"),
+            )
         x_cursor += analog_arrow_width
 
     x_end_analogs = x_cursor
@@ -417,8 +582,8 @@ def draw_protocol_arrows(
         ax.plot(
             [sep_x, sep_x],
             [
-                y_arrows - arrow_height * 1.4 / 2 - 0.15,
-                y_arrows + arrow_height * 1.4 / 2 + 0.25,
+                y_arrows - arrow_height / 2 - 0.15,
+                y_arrows + arrow_height / 2 + 0.25,
             ],
             linestyle=":",
             color="black",
@@ -434,7 +599,7 @@ def draw_protocol_arrows(
             width=thin_arrow_height,
             head_width=thin_arrow_height * 1.4,
             length_includes_head=True,
-            head_length=0.12,
+            head_length=min(pt_width * 0.2, 1),
             fc=color,
             ec="none",
         )
@@ -445,7 +610,7 @@ def draw_protocol_arrows(
                 x_pt_start - 0.05,
                 y_arrows,
                 prefix,
-                ha="right",
+                ha="center",
                 va="center",
                 fontsize=9,
             )
@@ -491,7 +656,7 @@ def draw_protocol_arrows(
             width=bar_height,
             length_includes_head=True,
             head_width=bar_height * 1.3,
-            head_length=0.12,
+            head_length=min(pre_visual_width * 0.2, 1),
             fc=color,
             ec="none",
             alpha=0.6,
@@ -500,9 +665,9 @@ def draw_protocol_arrows(
         # Duration label to the left of the bar
         ax.text(
             x_pre_start + pre_visual_width / 2,
-            y_pre + bar_height / 2 + 0.07,
+            y_pre + bar_height / 2 + 0.05,
             pretreatment.get("duration", ""),
-            ha="right",
+            ha="center",
             va="center",
             fontsize=9,
             fontweight="bold",
@@ -516,3 +681,67 @@ def draw_protocol_arrows(
             va="top",
             fontsize=9,
         )
+    # 1. Horizontal Scaling: Find the start and end of all drawn objects
+    left_bound = x_start
+    if pretreatment is not None:
+        left_bound = min(left_bound, x_pre_start)
+
+    right_bound = x_end_analogs
+    if post_treatment is not None:
+        right_bound = x_pt_start + pt_width
+
+    # 2. Vertical Scaling: Find the top and bottom
+    # Analog labels are at 'time_y', Pretreatment labels are below 'y_pre'
+    top_bound = time_y + 0.15
+    bottom_bound = (y_pre - 0.25) if pretreatment is not None else (y_arrows - 0.4)
+
+    # 3. Apply the limits with a tiny bit of padding
+    ax.set_xlim(left_bound - 0.2, right_bound + 0.5)
+    ax.set_ylim(bottom_bound, top_bound)
+
+
+def regression_plot(df, ax=None, color="blue", add_stats=True):
+    df_grouped = df.groupby(["Type", "Grader"]).median(numeric_only=True)
+    df_pivot = df_grouped["Ratio"].unstack("Grader").reset_index()
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(8, 8))
+    sns.regplot(
+        x=Grader.HUMAN,
+        y=Grader.AI,
+        data=df_pivot,
+        ax=ax,
+        line_kws={"color": "black"},
+        scatter_kws={"color": color},
+    )
+    ax.plot([0.8, 1.8], [0.8, 1.8], color="red", linestyle="--")
+
+    ax.grid(True, linestyle="--", alpha=0.7)
+    ax.set_xlim(0.8, 1.8)
+    ax.set_ylim(0.8, 1.8)
+    ax.set_xlabel(
+        f"{Grader.HUMAN} median ratio (N={len(df[df['Grader'] == Grader.HUMAN])} fibers)"
+    )
+    ax.set_ylabel(
+        f"{Grader.AI} median ratio (N={len(df[df['Grader'] == Grader.AI])} fibers)"
+    )
+    if add_stats:
+        # Calculate Pearson and Spearman correlations
+        pearson_corr, pearson_p = pearsonr(df_pivot[Grader.HUMAN], df_pivot[Grader.AI])
+        spearman_corr, spearman_p = spearmanr(
+            df_pivot[Grader.HUMAN], df_pivot[Grader.AI]
+        )
+        # Annotate the plot with correlation coefficients and p-values
+        ax.text(
+            0.05,
+            0.95,
+            f"Pearson r={pearson_corr:.2f} (p={pearson_p:.3g})\nSpearman ρ={spearman_corr:.2f} (p={spearman_p:.3g})",
+            transform=ax.transAxes,
+            ha="left",
+            va="top",
+            fontsize=9,
+            bbox=dict(
+                boxstyle="round,pad=0.3", facecolor="white", edgecolor="gray", alpha=0.8
+            ),
+        )
+    return ax

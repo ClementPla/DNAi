@@ -152,9 +152,7 @@ def load_multifile_image(_filepaths, pixel_size=0.13, clarity=1.0):
     else:
         chan1 = None
     if _filepaths[1] is not None:
-        chan2 = read_img(
-            _filepaths[1]
-        )
+        chan2 = read_img(_filepaths[1])
         chan2 = cv2.cvtColor(chan2, cv2.COLOR_RGB2GRAY)
         h, w = chan2.shape[:2]
     else:
@@ -177,10 +175,10 @@ def load_multifile_image(_filepaths, pixel_size=0.13, clarity=1.0):
     return result
 
 
-def mask_filepath_to_fibers(filepath, RGB2GRB=False):
+def mask_filepath_to_fibers(filepath, RGB2GRB=False, disentangle_crossing=True):
     mask = cv2.imread(str(filepath), cv2.IMREAD_COLOR_RGB)
     if RGB2GRB:
         mask = mask[:, :, [1, 0, 2]]
     mask = convert_rgb_to_mask(image=mask, threshold=150)["mask"]
-    fibers = extract_fibers(mask)
+    fibers = extract_fibers(mask, disentangle_crossing=disentangle_crossing)
     return fibers

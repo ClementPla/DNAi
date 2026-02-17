@@ -37,6 +37,11 @@ import {
   KeyboardHelp,
 } from "./components"
 
+// ──────────────── NEW IMPORTS ────────────────
+import { ContextMenu, ExportOptions } from "./components/ContextMenu"
+import { exportFiberAsPng } from "./utils/exportFiber"
+// ─────────────────────────────────────────────
+
 const engine = new Styletron()
 
 function FiberComponent(
@@ -57,6 +62,14 @@ function FiberComponent(
   const [strokeScale, setStrokeScale] = useState([1])
   const [currentScale, setCurrentScale] = useState(1)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+
+  // ──────────────── NEW STATE ────────────────
+  const [contextMenu, setContextMenu] = useState<{
+    x: number
+    y: number
+    fiber: Fiber
+  } | null>(null)
+  // ───────────────────────────────────────────
 
   // --- Hooks ---
   const inspection = useInspection()
@@ -142,9 +155,53 @@ function FiberComponent(
     setCurrentScale(ref.state.scale)
   }, [])
 
+  // ──────────────── NEW HANDLERS ────────────────
+  const handleFiberContextMenu = useCallback(
+    (e: React.MouseEvent, fiber: Fiber) => {
+      e.preventDefault()
+      e.stopPropagation()
+      setContextMenu({ x: e.clientX, y: e.clientY, fiber })
+    },
+    []
+  )
+
+  const handleExportFiber = useCallback(
+    (options: ExportOptions) => {
+      if (!contextMenu) return
+      exportFiberAsPng({
+        fiber: contextMenu.fiber,
+        imageSrc: image,
+        imageW: image_w,
+        imageH: image_h,
+        pixelSize: pixel_size,
+        currentScale,
+        fitScale,
+        margin,
+        strokeScale: strokeScale[0],
+        options,
+      })
+    },
+    [
+      contextMenu,
+      image,
+      image_w,
+      image_h,
+      pixel_size,
+      currentScale,
+      fitScale,
+      margin,
+      strokeScale,
+    ]
+  )
+  // ──────────────────────────────────────────────
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement) return
+      if (e.key === "Escape" && contextMenu) {
+        setContextMenu(null)
+        return
+      }
       switch (e.key.toLowerCase()) {
         case "t":
           setShowOnlyPolylines((prev) => !prev)
@@ -168,7 +225,7 @@ function FiberComponent(
           break
       }
     },
-    [navigateToNextUninspected, inspection]
+    [navigateToNextUninspected, inspection, contextMenu]
   )
 
   return (
@@ -317,6 +374,7 @@ function FiberComponent(
                             onClick={() =>
                               inspection.handleFiberClick(el.fiber_id)
                             }
+                            onContextMenu={(e) => handleFiberContextMenu(e, el)}
                           >
                             <title>
                               Fiber id: {el.fiber_id.toFixed(0)}, Ratio:{" "}
@@ -429,6 +487,17 @@ function FiberComponent(
               totalCount={elements.length}
             />
           </div>
+
+          {/* ──── Context Menu ──── */}
+          {contextMenu && (
+            <ContextMenu
+              x={contextMenu.x}
+              y={contextMenu.y}
+              fiberId={contextMenu.fiber.fiber_id}
+              onDownload={handleExportFiber}
+              onClose={() => setContextMenu(null)}
+            />
+          )}
         </div>
       </BaseProvider>
     </StyletronProvider>

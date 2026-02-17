@@ -3,6 +3,7 @@ from matplotlib.collections import LineCollection
 import numpy as np
 from typing import Optional, Tuple
 from dnafiber.postprocess.skan import (
+    compute_trace_counts,
     trace_skeleton,
     compute_trace_curvature,
     estimate_fiber_category,
@@ -95,10 +96,14 @@ class FiberProps:
     @property
     def counts(self):
         if self.red_pixels is None or self.green_pixels is None:
-            red_raw = np.sum(self.data == 1)
-            green_raw = np.sum(self.data == 2)
-            self.red_pixels = red_raw + self.endpoint_correction[0]
-            self.green_pixels = green_raw + self.endpoint_correction[1]
+            trace = self.get_trace()
+            if len(trace) < 2:
+                self.red_pixels = float(np.sum(self.data == 1))
+                self.green_pixels = float(np.sum(self.data == 2))
+            else:
+                red, green = compute_trace_counts(np.asarray(trace), self.data)
+                self.red_pixels = red + self.endpoint_correction[0]
+                self.green_pixels = green + self.endpoint_correction[1]
         return self.red_pixels, self.green_pixels
 
     @property
@@ -168,6 +173,14 @@ class FiberProps:
         if not self.trace.size:
             self.trace = np.empty((0, 2), dtype=int)
         return self.trace
+
+    def get_labelled_trace(self):
+        trace = self.get_trace()
+        if trace.size == 0:
+            return trace
+        # Get the label of each point in the trace
+        labels = self.data[trace[:, 0], trace[:, 1]]
+        return trace, labels
 
     @property
     def ratio(self):
@@ -398,6 +411,13 @@ class Fibers:
             [fiber for fiber in self.fibers if (fiber.proba_error < threshold)]
         )
 
+    def filter_type(self, fiber_types: list[FiberType]):
+        if not isinstance(fiber_types, list):
+            fiber_types = [fiber_types]
+        return Fibers(
+            [fiber for fiber in self.fibers if fiber.fiber_type not in fiber_types]
+        )
+
     def filter_border(self, h, w, border=1):
         return Fibers(
             [
@@ -533,7 +553,25 @@ class Fibers:
     def from_pickle(path: str) -> "Fibers":
         with open(path, "rb") as f:
             fibers = pickle.load(f)
+            fibers = Fibers.static_copy(
+                fibers
+            )  # Ensure we have a deep copy to avoid old version issues
+
         return fibers
+
+    @staticmethod
+    def static_copy(other):
+        copied_fibers = [
+            FiberProps(
+                bbox=fiber.bbox,
+                data=fiber.data,
+                fiber_id=fiber.fiber_id,
+                proba_error=fiber.proba_error if hasattr(fiber, "proba_error") else 0.0,
+                endpoint_correction=fiber.endpoint_correction,
+            )
+            for fiber in other
+        ]
+        return Fibers(copied_fibers, path=other.path)
 
     def __add__(self, other: "Fibers") -> "Fibers":
         combined_fibers = self.fibers + other.fibers
@@ -548,7 +586,7 @@ class Fibers:
                 bbox=fiber.bbox,
                 data=fiber.data,
                 fiber_id=fiber.fiber_id,
-                proba_error=fiber.proba_error,
+                proba_error=fiber.proba_error if hasattr(fiber, "proba_error") else 0.0,
                 endpoint_correction=fiber.endpoint_correction,
             )
             for fiber in self.fibers

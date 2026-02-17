@@ -11,7 +11,7 @@ from dnafiber.postprocess.skan import find_line_intersection
 from dnafiber.postprocess.fiber import FiberProps, Bbox, Fibers
 from itertools import compress
 from scipy.cluster.hierarchy import fcluster, linkage
-
+from dnafiber.postprocess.skeletonization import skeletonize_preserve_endpoints
 
 MIN_ANGLE = 45
 MIN_BRANCH_LENGTH = 1
@@ -341,8 +341,9 @@ def extract_fibers(
     mask,
     x_offset: int = 0,
     y_offset: int = 0,
-    endpoint_correction: bool = True,
+    disentangle_crossing=True,
 ) -> Fibers:
+    PAD = 4  # 1-2 pixels is enough
     retval, labels, stats, centroids = cv2.connectedComponentsWithStatsWithAlgorithm(
         (mask > 0).astype(np.uint8),
         connectivity=8,
@@ -371,25 +372,14 @@ def extract_fibers(
         local_label = (labels[y1 : y1 + h, x1 : x1 + w] == i).astype(np.uint8)
         local_fiber = local_mask * local_label
         local_fiber_binary = local_fiber > 0
-        dist_transform = distance_transform_edt(local_fiber_binary)
-        local_binary_fiber = skeletonize(local_fiber_binary).astype(np.uint8)
+        padded = np.pad(local_fiber_binary, PAD, mode="constant", constant_values=0)
+        local_binary_fiber = skeletonize_preserve_endpoints(padded).astype(np.uint8)
+        local_binary_fiber = local_binary_fiber[PAD:-PAD, PAD:-PAD]  # unpad
         local_fiber = local_binary_fiber * local_fiber
         local_fibers.append(local_fiber)
         coordinates.append(np.asarray([x1, y1, w, h]))
-        endpoints = find_endpoints(local_binary_fiber)
 
-        if endpoint_correction and endpoints:
-            red_corr, green_corr = 0.0, 0.0
-            for y, x in endpoints:
-                radius = dist_transform[y, x]
-                color = local_fiber[y, x]
-                if color == 1:
-                    red_corr += radius
-                elif color == 2:
-                    green_corr += radius
-            correction = (red_corr, green_corr)
-        else:
-            correction = (0.0, 0.0)
+        correction = (0.0, 0.0)
         endpoint_corrections.append(correction)
         local_junctions = find_line_intersection(local_binary_fiber)
         local_junctions = np.where(local_junctions)
@@ -397,7 +387,11 @@ def extract_fibers(
         junctions.append(local_junctions)
 
     fiberprops = []
-    has_junctions = [len(j) > 0 for j in junctions]
+    if disentangle_crossing:
+        has_junctions = [len(j) > 0 for j in junctions]
+    else:
+        has_junctions = [False] * len(junctions)
+
     for i, (fiber, coordinate, correction) in enumerate(
         zip(
             compress(local_fibers, np.logical_not(has_junctions)),
@@ -420,21 +414,19 @@ def extract_fibers(
             )
         )
 
-    if endpoint_corrections:
-        fiber_width = int(np.mean(endpoint_corrections))
-    else:
-        fiber_width = 3
+    fiber_width = 3
     # Handle fibers with junctions
-    try:
-        fiberprops += handle_ccs_with_junctions(
-            compress(local_fibers, has_junctions),
-            compress(junctions, has_junctions),
-            compress(coordinates, has_junctions),
-            fiber_width=fiber_width,
-        )
-    except (IndexError, ValueError):
-        # If there is an IndexError, it means that there are no fibers with junctions
-        pass
+    if disentangle_crossing:
+        try:
+            fiberprops += handle_ccs_with_junctions(
+                compress(local_fibers, has_junctions),
+                compress(junctions, has_junctions),
+                compress(coordinates, has_junctions),
+                fiber_width=fiber_width,
+            )
+        except (IndexError, ValueError):
+            # If there is an IndexError, it means that there are no fibers with junctions
+            pass
 
     for fiber in fiberprops:
         fiber.bbox.x += x_offset

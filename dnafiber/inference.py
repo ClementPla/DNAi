@@ -138,11 +138,14 @@ def run_model(
     # 1. Preprocessing & Scaling
     tensor = transform(image=image)["image"].unsqueeze(0)
     h_orig, w_orig = tensor.shape[2:]
+    # The model was trained at 0.26µm/px, so we need to rescale the input accordingly.
+    # The user provides the actual pixel size, and we compute the rescaling factor to match the training conditions.
     rescale_factor = scale / 0.26
     input_tensor = F.interpolate(
         tensor,
         size=(int(h_orig * rescale_factor), int(w_orig * rescale_factor)),
         mode="bilinear",
+        antialias=True if rescale_factor < 1 else False,
     )
 
     # 2. Setup Sliding Window

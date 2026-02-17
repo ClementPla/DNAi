@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import Optional
 import pandas as pd
-import pickle
 from dnafiber.postprocess.fiber import Fibers
+from dnafiber.analysis.const import Grader
 import numpy as np
 
 
@@ -28,20 +28,25 @@ def load_spreadsheet(root_excel: Path | str) -> pd.DataFrame:
             df_gts = pd.concat([df_gts, df_gt], ignore_index=True)
             continue
 
-        try:
-            df_gt["Ratio"] = df_sheet[2].astype(float).dropna().reset_index(drop=True)
-        except KeyError:
-            continue
-        # even row is SecondAnalog, odd is FirstAnalog
-        df_gt["First analog (µm)"] = df_sheet.index.map(
-            lambda x: df_sheet.iloc[x, 1] if x % 2 == 1 else np.nan
-        ).dropna()
-        df_gt["Second analog (µm)"] = df_sheet.index.map(
-            lambda x: df_sheet.iloc[x, 1] if x % 2 == 0 else np.nan
-        ).dropna()
-
+        first_analogs = df_sheet.iloc[
+            1::2, 1
+        ].values  # Start at 1, step by 2 (Odd rows)
+        second_analogs = df_sheet.iloc[
+            0::2, 1
+        ].values  # Start at 0, step by 2 (Even rows)
+        min_len = min(len(first_analogs), len(second_analogs))
+        df_gt = pd.DataFrame(
+            {
+                "First analog (µm)": first_analogs[:min_len],
+                "Second analog (µm)": second_analogs[:min_len],
+            }
+        )
         df_gt["Length"] = df_gt["First analog (µm)"] + df_gt["Second analog (µm)"]
         df_gt["Type"] = sheet_name
+
+        df_gt["Ratio"] = (
+            df_gt["Second analog (µm)"] / df_gt["First analog (µm)"]
+        ).replace([np.inf, -np.inf], np.nan)
 
         df_gt["Fiber type"] = "double"
 
@@ -57,6 +62,7 @@ def load_dataframe(
     root_pred: Path | str,
     root_gt: Path | str,
     rename_map_gt: Optional[callable] = None,
+    rename_map_pred: Optional[callable] = None,
     rename_map: Optional[callable] = default_map_condition_name,
     error_threshold: Optional[float] = None,
 ) -> pd.DataFrame:
@@ -66,8 +72,7 @@ def load_dataframe(
     pred_files = list(Path(root_pred).rglob("*.pkl"))
     df_preds = None
     for pred_file in pred_files:
-        with open(pred_file, "rb") as f:
-            fiber_preds: Fibers = pickle.load(f)
+        fiber_preds: Fibers = Fibers.from_pickle(pred_file)
         if len(fiber_preds) == 0:
             continue
         img_name = pred_file.stem
@@ -87,9 +92,12 @@ def load_dataframe(
     df_gts = load_spreadsheet(root_gt)
     if rename_map_gt is not None:
         df_gts["Type"] = df_gts["Type"].apply(rename_map_gt)
-    df_gts["Grader"] = "Human"
-    df_preds["Grader"] = "AI"
-    df_preds["Type"] = df_preds["Type"]
+    df_gts["Grader"] = Grader.HUMAN
+    df_preds["Grader"] = Grader.AI
+
+    if rename_map_pred is not None:
+        df_preds["Type"] = df_preds["Type"].apply(rename_map_pred)
+
     df_preds["Length"] = df_preds["First analog (µm)"] + df_preds["Second analog (µm)"]
 
     df_all = pd.concat([df_gts, df_preds], ignore_index=True)

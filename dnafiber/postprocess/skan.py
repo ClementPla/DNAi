@@ -402,18 +402,50 @@ def get_neighbors_8(y, x, shape):
 @njit
 def find_endpoints(skel):
     endpoints = List.empty_list(tuple_type)
-    for y in range(skel.shape[0]):
-        for x in range(skel.shape[1]):
+    ny_max, nx_max = skel.shape
+
+    for y in range(ny_max):
+        for x in range(nx_max):
             if skel[y, x] == 1:
                 count = 0
-                neighbors = get_neighbors_8(y, x, skel.shape)
-                for ny, nx in neighbors:
-                    if skel[ny, nx] == 1:
-                        count += 1
-                if count == 1:
-                    endpoints.append((y, x))
+                # Define bounds for the 3x3 window safely
+                y_start = max(0, y - 1)
+                y_end = min(ny_max, y + 2)
+                x_start = max(0, x - 1)
+                x_end = min(nx_max, x + 2)
 
+                # Sum the 3x3 neighborhood
+                # This includes the center pixel, so we subtract it at the end
+                for ny in range(y_start, y_end):
+                    for nx in range(x_start, x_end):
+                        count += skel[ny, nx]
+
+                # Subtract the center pixel (which we know is 1)
+                neighbor_count = count - 1
+
+                if neighbor_count <= 1:
+                    endpoints.append((y, x))
     return endpoints
+
+
+@njit
+def compute_trace_counts(trace, data):
+    """Compute arc-length-weighted red and green distances along a trace."""
+    n = len(trace)
+    red = 0.0
+    green = 0.0
+    if n < 2:
+        return red, green
+    for i in range(1, n):
+        dy = float(trace[i, 0] - trace[i - 1, 0])
+        dx = float(trace[i, 1] - trace[i - 1, 1])
+        step = np.sqrt(dy * dy + dx * dx)
+        color = data[trace[i, 0], trace[i, 1]]
+        if color == 1:
+            red += step
+        elif color == 2:
+            green += step
+    return red, green
 
 
 @njit
@@ -422,7 +454,7 @@ def trace_skeleton(skel):
     if len(endpoints) < 1:
         return List.empty_list(tuple_type)  # Return empty list with proper type
 
-    return trace_from_point_optimized(skel, endpoints[0], max_length=skel.sum())
+    return trace_from_point_smooth(skel, endpoints[0], max_length=skel.sum())
 
 
 @njit
@@ -689,12 +721,11 @@ def estimate_fiber_category(fiber_trace: np.ndarray, fiber_data: np.ndarray) -> 
     """
     Estimate the fiber category based on the number of red and green pixels.
     """
-    coordinates = fiber_trace
-    coordinates = np.asarray(coordinates)
+    coordinates = np.asarray(fiber_trace)
     try:
         values = fiber_data[coordinates[:, 0], coordinates[:, 1]]
     except IndexError:
-        return "unknown"
+        return FiberType.ERROR
     diff = np.diff(values)
     jump = np.sum(diff != 0)
     n_ccs = jump + 1

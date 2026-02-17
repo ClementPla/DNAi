@@ -24,6 +24,7 @@ def run_one_file(
     low_end_hardware=False,
     clarity=1.0,
     error_detection_model=None,
+    device=None,
 ) -> Fibers:
     start = time.time()
 
@@ -53,11 +54,14 @@ def run_one_file(
     if verbose:
         print(f"Image loading time: {time.time() - start:.2f} seconds for {filename}")
     start = time.time()
+    if device is None:
+        device = "cuda" if is_cuda_available else "cpu"
+
     results = inference(
         model=model,
         image=image,
         pixel_size=pixel_size,
-        device="cuda" if is_cuda_available else "cpu",
+        device=device,
         use_tta=use_tta,
         low_end_hardware=low_end_hardware,
         verbose=verbose,
@@ -104,7 +108,7 @@ def inference(
             error_detection_model,
             device=device,
             pixel_size=pixel_size,
-            batch_size=64 if not low_end_hardware else 32,
+            batch_size=128 if not low_end_hardware else 32,
             verbose=verbose,
         )
     return output

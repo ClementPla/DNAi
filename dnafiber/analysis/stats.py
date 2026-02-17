@@ -1,7 +1,11 @@
 import numpy as np
 from scipy import stats
 
-# Derrick, Toher & White, 2017
+import pandas as pd
+from scipy.stats import mannwhitneyu
+from tqdm.auto import tqdm
+
+from numba import njit, prange
 
 
 def partover_test(
@@ -151,3 +155,188 @@ def partover_test(
         result["conf.int"] = (lower, upper)
 
     return result
+
+
+def find_grader_disagreements(
+    df: pd.DataFrame, reference_type: str, alpha: float = 0.05
+):
+    df = df.copy()
+    df["Type"] = df["Type"].astype(str)
+    df["Grader"] = df["Grader"].astype(str)
+
+    graders = sorted(df["Grader"].unique())
+    assert len(graders) == 2, f"Expected exactly 2 graders, got {graders}"
+
+    types = [t for t in df["Type"].unique() if t != reference_type]
+
+    results = []
+    for typ in types:
+        row = {"Type": typ}
+        sig = {}
+
+        for grader in graders:
+            mask_ref = (df["Type"] == reference_type) & (df["Grader"] == grader)
+            mask_typ = (df["Type"] == typ) & (df["Grader"] == grader)
+
+            ref_ratios = df.loc[mask_ref, "Ratio"].dropna()
+            typ_ratios = df.loc[mask_typ, "Ratio"].dropna()
+
+            row[f"n_ref_{grader}"] = len(ref_ratios)
+            row[f"n_typ_{grader}"] = len(typ_ratios)
+
+            if len(ref_ratios) < 2 or len(typ_ratios) < 2:
+                row[f"U_{grader}"] = None
+                row[f"p_{grader}"] = None
+                row[f"significant_{grader}"] = None
+                sig[grader] = None
+                continue
+
+            stat, p = mannwhitneyu(ref_ratios, typ_ratios, alternative="two-sided")
+            # Effect size: rank-biserial correlation
+            n1, n2 = len(ref_ratios), len(typ_ratios)
+            r = 1 - (2 * stat) / (n1 * n2)
+            row[f"effect_size_{grader}"] = r
+            row[f"U_{grader}"] = stat
+            row[f"p_{grader}"] = p
+            row[f"significant_{grader}"] = p < alpha
+            sig[grader] = p < alpha
+
+        # Only compare when both graders have valid results
+        if (
+            all(v is not None for v in sig.values())
+            and sig[graders[0]] != sig[graders[1]]
+        ):
+            sig_grader = [g for g, s in sig.items() if s][0]
+            row["disagreement"] = f"{sig_grader}_only"
+        else:
+            row["disagreement"] = None
+
+        results.append(row)
+
+    result_df = pd.DataFrame(results)
+    return result_df
+
+
+@njit
+def cliffs_delta(x, y):
+    nx, ny = len(x), len(y)
+    gt = 0
+    lt = 0
+    for i in range(nx):
+        for j in range(ny):
+            if x[i] > y[j]:
+                gt += 1
+            elif x[i] < y[j]:
+                lt += 1
+    return (gt - lt) / (nx * ny)
+
+
+@njit(parallel=True)
+def _bootstrap_deltas(x, y, idx_x, idx_y):
+    n_boot, nx = idx_x.shape
+    ny = idx_y.shape[1]
+    deltas = np.empty(n_boot)
+    for i in prange(n_boot):
+        gt = 0
+        lt = 0
+        for j in range(nx):
+            xj = x[idx_x[i, j]]
+            for k in range(ny):
+                yk = y[idx_y[i, k]]
+                gt += xj > yk
+                lt += xj < yk
+        deltas[i] = (gt - lt) / (nx * ny)
+    return deltas
+
+
+def bootstrap_cliffs_delta_ci(x, y, n_boot=5000, alpha=0.05, seed=42):
+    rng = np.random.default_rng(seed)
+    x, y = np.asarray(x, dtype=np.float64), np.asarray(y, dtype=np.float64)
+    nx, ny = len(x), len(y)
+
+    idx_x = rng.integers(0, nx, size=(n_boot, nx))
+    idx_y = rng.integers(0, ny, size=(n_boot, ny))
+
+    deltas = _bootstrap_deltas(x, y, idx_x, idx_y)
+
+    lo, hi = 100 * alpha / 2, 100 * (1 - alpha / 2)
+    return np.percentile(deltas, [lo, hi])
+
+
+def find_grader_disagreements_cliff(
+    df: pd.DataFrame, reference_type: str, n_boot=10000, alpha=0.05
+):
+    df = df.copy()
+    df["Type"] = df["Type"].astype(str)
+    df["Grader"] = df["Grader"].astype(str)
+
+    graders = sorted(df["Grader"].unique())
+    assert len(graders) == 2, f"Expected exactly 2 graders, got {graders}"
+
+    types = [t for t in df["Type"].unique() if t != reference_type]
+
+    # Warm up numba JIT on tiny arrays so compilation doesn't count in the loop
+    _warmup_x = np.array([1.0, 2.0])
+    _warmup_y = np.array([3.0, 4.0])
+    cliffs_delta(_warmup_x, _warmup_y)
+    _bootstrap_deltas(
+        _warmup_x,
+        _warmup_y,
+        np.zeros((2, 2), dtype=np.int64),
+        np.zeros((2, 2), dtype=np.int64),
+    )
+
+    results = []
+    for typ in tqdm(types, desc="Processing types"):
+        row = {"Type": typ}
+        excludes_zero = {}
+
+        for grader in graders:
+            ref_ratios = (
+                df.loc[
+                    (df["Type"] == reference_type) & (df["Grader"] == grader), "Ratio"
+                ]
+                .dropna()
+                .values.astype(np.float64)
+            )
+
+            typ_ratios = (
+                df.loc[(df["Type"] == typ) & (df["Grader"] == grader), "Ratio"]
+                .dropna()
+                .values.astype(np.float64)
+            )
+
+            row[f"n_ref_{grader}"] = len(ref_ratios)
+            row[f"n_typ_{grader}"] = len(typ_ratios)
+
+            if len(ref_ratios) < 2 or len(typ_ratios) < 2:
+                row[f"delta_{grader}"] = None
+                row[f"ci_low_{grader}"] = None
+                row[f"ci_high_{grader}"] = None
+                row[f"excludes_zero_{grader}"] = None
+                excludes_zero[grader] = None
+                continue
+
+            d = cliffs_delta(ref_ratios, typ_ratios)
+            ci_low, ci_high = bootstrap_cliffs_delta_ci(
+                ref_ratios, typ_ratios, n_boot=n_boot, alpha=alpha
+            )
+
+            row[f"delta_{grader}"] = d
+            row[f"ci_low_{grader}"] = ci_low
+            row[f"ci_high_{grader}"] = ci_high
+
+            ez = (ci_low > 0) or (ci_high < 0)
+            row[f"excludes_zero_{grader}"] = ez
+            excludes_zero[grader] = ez
+
+        vals = {k: v for k, v in excludes_zero.items() if v is not None}
+        if len(vals) == 2 and len(set(vals.values())) == 2:
+            sig_grader = [g for g, s in vals.items() if s][0]
+            row["disagreement"] = f"{sig_grader}_only"
+        else:
+            row["disagreement"] = None
+
+        results.append(row)
+
+    return pd.DataFrame(results)

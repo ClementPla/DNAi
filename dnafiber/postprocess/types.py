@@ -7,3 +7,4 @@ class FiberType(StrEnum):
     ONE_TWO_ONE = "termination"
     TWO_ONE_TWO = "origin"
     OTHER = "other"
+    ERROR = "error"

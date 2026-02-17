@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 from scipy.stats import f_oneway, tukey_hsd, mannwhitneyu
 from scipy.stats import ttest_ind, kruskal, alexandergovern
+from dnafiber.analysis.const import Grader
 
 
 def load_experiment_predictions(root, filter_length=None, keep_invalid=False):
@@ -85,21 +86,23 @@ def load_experiment(root_pred, root_gt, filter_invalid=False, keep_n_longest=Non
     return df
 
 
-def normalize_df(df, baseline):
+def normalize_df(df, baseline, column="Ratio"):
     """
-    Normalize the 'Ratio' column of the DataFrame.
+    Normalize the 'column' of the DataFrame.
     """
-    for grader in ["Human", "AI"]:
+    df = df.copy()
+
+    for grader in df["Grader"].unique():
         # Normalize the ratios by the baseline
         median_grader_baseline = df[
             (df["Type"] == baseline) & (df["Grader"] == grader)
-        ]["Ratio"].median()
+        ][column].median()
 
         # Get the mask for this grader
         mask = df["Grader"] == grader
 
         # Normalize using the mask - more explicit in-place modification
-        df.loc[mask, "Ratio"] = df.loc[mask, "Ratio"] / median_grader_baseline
+        df.loc[mask, column] = df.loc[mask, column] / median_grader_baseline
 
     return df
 
@@ -121,7 +124,7 @@ def pvalue_to_asterisk(p_value):
 def compare_pairs(df, pairs, palette, base_offset=6, column="Ratio"):
     group_names = df["Type"].unique().tolist()
 
-    for grader, color in zip(["Human", "AI"], palette):
+    for grader, color in zip([Grader.HUMAN, Grader.AI], palette):
         for pair in pairs:
             group1 = df[(df["Type"] == pair[0]) & (df["Grader"] == grader)][column]
             group2 = df[(df["Type"] == pair[1]) & (df["Grader"] == grader)][column]
@@ -146,7 +149,7 @@ def compare_pairs(df, pairs, palette, base_offset=6, column="Ratio"):
                     color="black",
                 )
                 plt.text(
-                    x=(x1 + x2) / 2 + (-0.3 if grader == "Human" else 0.3),
+                    x=(x1 + x2) / 2 + (-0.3 if grader == Grader.HUMAN else 0.3),
                     y=y,
                     s=asterisks,
                     ha="center",
@@ -220,14 +223,14 @@ def select_N_closest_to_median(df, N=10, column="Ratio"):
     """
     selected_dfs = []
     for (type_, grader), group in df.groupby(["Type", "Grader"]):
-        if grader == "Human":
+        if grader == Grader.HUMAN:
             selected_dfs.append(group)
             continue
         median = group[column].median()
         group["Distance to median"] = (group[column] - median).abs()
         if N is None:
             # We chose N as the size of the Human grader group
-            N = df[(df["Type"] == type_) & (df["Grader"] == "Human")].shape[0]
+            N = df[(df["Type"] == type_) & (df["Grader"] == Grader.HUMAN)].shape[0]
         closest_to_median = group.nsmallest(N, "Distance to median")
         selected_dfs.append(closest_to_median)
 
@@ -253,3 +256,17 @@ def offset_transition(df, offset=0, pixel_size=0.13, symetric=True):
         / df.loc[df["Grader"] == "AI", "First analog (µm)"]
     )
     return df
+
+
+def sort_by_types_median_ratio(dataframe, ascending=False):
+    """
+    Sort the DataFrame by the median 'Ratio' of each 'Type'.
+    """
+    median_ratios = (
+        dataframe.groupby("Type")["Ratio"].median().sort_values(ascending=ascending)
+    )
+    sorted_types = median_ratios.index.tolist()
+    dataframe["Type"] = pd.Categorical(
+        dataframe["Type"], categories=sorted_types, ordered=True
+    )
+    return dataframe
