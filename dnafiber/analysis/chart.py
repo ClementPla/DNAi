@@ -7,6 +7,7 @@ import seaborn as sns
 import numpy as np
 from scipy.stats import pearsonr, spearmanr
 from dnafiber.analysis.const import Grader
+from matplotlib.patches import Patch
 
 import warnings
 
@@ -252,7 +253,6 @@ def highlight_disagreements(ax, df, disagreement_types, color="#FFCCCC", alpha=0
             ax.axvspan(idx - 0.5, idx + 0.5, color=color, alpha=alpha, zorder=0)
 
     # Add a single legend entry for the shading
-    from matplotlib.patches import Patch
 
     existing_handles, existing_labels = ax.get_legend_handles_labels()
     shading_patch = Patch(facecolor=color, alpha=alpha, label="Grader disagreement")
@@ -268,25 +268,12 @@ def add_disagreement_brackets(
     disagreement_types,
     type_order,
     reference_type,
+    grader_colors=None,
     y_start=None,
     bracket_spacing_factor=1.12,
     bracket_height_factor=1.03,
+    annotate=True,
 ):
-    """
-    Draw brackets from reference_type to each disagreement type, stacked vertically.
-    Spacing is multiplicative to work correctly on log-scale axes.
-
-    Parameters
-    ----------
-    ax : matplotlib Axes
-    df_results : DataFrame from find_grader_disagreements_cliff
-    disagreement_types : list of Type names to annotate
-    type_order : list of all Type names in x-axis order
-    reference_type : the reference Type name
-    y_start : y position for the first bracket (default: auto)
-    bracket_spacing_factor : multiplicative factor between stacked brackets
-    bracket_height_factor : multiplicative height of the bracket tip
-    """
     if y_start is None:
         y_start = ax.get_ylim()[1] * 1.1
 
@@ -294,8 +281,11 @@ def add_disagreement_brackets(
     graders = [
         c.replace("delta_", "") for c in df_results.columns if c.startswith("delta_")
     ]
+    graders.sort(reverse=True)
 
-    # Sort by distance to reference so shorter brackets are drawn first (bottom)
+    if grader_colors is None:
+        grader_colors = {g: "dimgray" for g in graders}
+
     sorted_types = sorted(
         disagreement_types, key=lambda t: abs(type_order.index(t) - ref_idx)
     )
@@ -307,11 +297,9 @@ def add_disagreement_brackets(
         left = min(ref_idx, typ_idx) + 0.1
         right = max(ref_idx, typ_idx) - 0.1
 
-        # Multiplicative spacing for log scale
         y_base = y_start * (bracket_spacing_factor**i)
         y_top = y_base * bracket_height_factor
 
-        # Draw bracket
         ax.plot(
             [left, left, right, right],
             [y_base, y_top, y_top, y_base],
@@ -320,33 +308,31 @@ def add_disagreement_brackets(
             clip_on=False,
         )
 
-        # Build annotation
-        lines = []
-        for grader in graders:
-            d = row[f"delta_{grader}"]
-            ci_lo = row[f"ci_low_{grader}"]
-            ci_hi = row[f"ci_high_{grader}"]
-            ez = row[f"excludes_zero_{grader}"]
-            marker = "●" if ez else "○"
-            lines.append(f"{grader}: {marker} δ={d:.2f} [{ci_lo:.2f}, {ci_hi:.2f}]")
+        if annotate:
+            mid_x = (left + right) / 2
+            # Place each grader's symbol side by side
+            n_graders = len(graders)
+            total_width = 0.75 * (n_graders - 1)
+            x_positions = np.linspace(
+                mid_x - total_width / 2, mid_x + total_width / 2, n_graders
+            )
 
-        text = "\n".join(lines)
-        mid_x = (left + right) / 2
+            for x_pos, grader in zip(x_positions, graders):
+                ez = row[f"excludes_zero_{grader}"]
+                symbol = "✱" if ez else "n.s."
+                ax.annotate(
+                    symbol,
+                    xy=(x_pos, y_top),
+                    xytext=(0, 3),
+                    textcoords="offset points",
+                    ha="center",
+                    va="bottom",
+                    fontsize=7,
+                    fontweight="bold" if ez else "normal",
+                    color=grader_colors.get(grader, "dimgray"),
+                    clip_on=False,
+                )
 
-        ax.annotate(
-            text,
-            xy=(mid_x, y_top),
-            xytext=(0, 3),
-            textcoords="offset points",
-            ha="center",
-            va="bottom",
-            fontsize=5.5,
-            fontstyle="italic",
-            color="dimgray",
-            clip_on=False,
-        )
-
-    # Adjust ylim to make room
     top_y = (
         y_start * (bracket_spacing_factor ** len(sorted_types)) * bracket_spacing_factor
     )
@@ -564,7 +550,7 @@ def draw_protocol_arrows(
             )
             ax.text(
                 x_cursor,
-                arrow_start_y - 0.05,
+                arrow_start_y - 0.025,
                 event.get("label", ""),
                 ha="center",
                 va="top",
@@ -714,11 +700,11 @@ def regression_plot(df, ax=None, color="blue", add_stats=True):
         line_kws={"color": "black"},
         scatter_kws={"color": color},
     )
-    ax.plot([0.8, 1.8], [0.8, 1.8], color="red", linestyle="--")
+    ax.plot([0, 1.8], [0, 1.8], color="red", linestyle="--")
 
     ax.grid(True, linestyle="--", alpha=0.7)
-    ax.set_xlim(0.8, 1.8)
-    ax.set_ylim(0.8, 1.8)
+    ax.set_xlim(0.65, 1.85)
+    ax.set_ylim(0.65, 1.85)
     ax.set_xlabel(
         f"{Grader.HUMAN} median ratio (N={len(df[df['Grader'] == Grader.HUMAN])} fibers)"
     )

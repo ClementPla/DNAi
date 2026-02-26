@@ -263,41 +263,31 @@ def _assemble_advanced_layout(
         print(f"⚠ Figure width scaled to fit A4: {figsize[0]:.2f}″ × {figsize[1]:.2f}″")
 
     # Create figure
-    fig = plt.figure(figsize=figsize, facecolor=background_color)
-
-    # Create grid spec with spacing
-    gs = GridSpec(
-        max_row,
-        max_col,
-        figure=fig,
-        hspace=spacing,
-        wspace=spacing,
-        left=0.02,
-        right=0.98,
-        top=0.98,
-        bottom=0.02,
+    fig, axes = plt.subplots(
+        max_row, max_col, figsize=figsize, facecolor=background_color, squeeze=False
     )
+
+    plt.subplots_adjust(hspace=spacing, wspace=spacing)
 
     # Generate automatic labels
     auto_labels = _generate_labels(len(panels), label_style)
 
     # Add each panel
     for idx, panel in enumerate(panels):
+        img_path = Path(panel["image"])
         row = panel["row"]
         col = panel["col"]
         rowspan = panel.get("rowspan", 1)
         colspan = panel.get("colspan", 1)
-
-        # Create subplot with spanning
-        ax = fig.add_subplot(gs[row : row + rowspan, col : col + colspan])
+        label = panel.get("label", auto_labels[idx])
 
         # Load and display image
-        img = mpimg.imread(str(panel["image"]))
+        img = mpimg.imread(str(img_path))
+        ax = axes[row : row + rowspan, col : col + colspan]
+        if isinstance(ax, np.ndarray):
+            ax = ax.flatten()[0]  # Get the first axis if multiple
         ax.imshow(img)
         ax.axis("off")
-
-        # Determine label (custom or automatic)
-        label = panel.get("label", auto_labels[idx])
 
         # Add label
         x, y = _get_label_position(label_position, label_offset)
@@ -315,7 +305,10 @@ def _assemble_advanced_layout(
                 boxstyle="round,pad=0.3", facecolor="white", edgecolor="none", alpha=0.7
             ),
         )
+    plt.tight_layout()
+    plt.subplots_adjust(hspace=0, wspace=0)
 
+    plt.show()
     # Save figure
     plt.savefig(output_path, dpi=dpi, bbox_inches="tight", facecolor=background_color)
     plt.close()

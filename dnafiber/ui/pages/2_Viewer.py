@@ -112,7 +112,7 @@ def start_inference(
         low_end_hardware=st.session_state.get("low_end_hardware", DV.LOW_END_HARDWARE),
         key=inference_id,
     )
-    prediction = prediction.valid_copy()
+    # prediction = prediction.valid_copy()
 
     if detect_errors:
         with st.spinner("Detecting errors in fibers..."):

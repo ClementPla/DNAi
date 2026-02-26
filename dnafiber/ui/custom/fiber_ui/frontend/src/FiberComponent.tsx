@@ -286,7 +286,7 @@ function FiberComponent(
                 ref={transformRef}
                 disabled={disabled}
                 minScale={0.75 * Math.max(fitScale, 0.9)}
-                maxScale={20}
+                maxScale={50}
                 initialScale={Math.max(fitScale, 0.9)}
                 centerOnInit={true}
                 wheel={{ smoothStep: 0.01, step: 0.5 }}

@@ -10,8 +10,7 @@ from pathlib import Path
 from nntools.utils import Config
 from lightning.pytorch.strategies import DDPStrategy
 from dnafiber.data.dataset import FiberDatamodule
-from dnafiber.trainee import Trainee, TraineeMaskRCNN
-import torch
+from dnafiber.trainee import Trainee
 import argparse
 from lightning import seed_everything
 from dnafiber.model.utils import upload_to_hub
@@ -62,7 +61,7 @@ def train(arch, encoder):
         logger=logger,
         sync_batchnorm=True,
         # fast_dev_run=2,
-        strategy=DDPStrategy(find_unused_parameters=True),
+        # strategy=DDPStrategy(find_unused_parameters=True),
     )
 
     # tuner = Tuner(trainer=trainer)

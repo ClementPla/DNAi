@@ -16,6 +16,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 from dnafiber.data.consts import CMAP
 from dnafiber.postprocess.types import FiberType
+from scipy.spatial import cKDTree
 
 
 @attrs.define
@@ -68,14 +69,6 @@ class FiberProps:
     trace: np.ndarray = None  # Coordinates of the skeletons of the fiber
     endpoint_correction: Tuple[float, float] = (0.0, 0.0)  # (red_extra, green_extra)
     curvature: float = None  # Cached curvature value
-
-    @property
-    def data(self):
-        return self.data
-
-    @data.setter
-    def data(self, value):
-        self.data = value
 
     @property
     def red(self):
@@ -239,6 +232,37 @@ class FiberProps:
             > ratio
         )
 
+    def overlaps(self, other, ratio=0.5) -> bool:
+        """
+        Use skeleton matching to determine if two fibers overlap by at least a certain ratio.
+        """
+        return self.skeleton_match(other, ratio=ratio)
+
+    def skeleton_match(self, other, max_distance=5.0, ratio=0.5) -> bool:
+        """Match if a sufficient fraction of one skeleton's pixels
+        are within max_distance of the other skeleton."""
+        # Get skeleton pixel coordinates in global space
+        return self.skeleton_similarity(other, max_distance=max_distance) > ratio
+
+    def skeleton_similarity(self, other, max_distance=5.0) -> float:
+        """Return a [0, 1] similarity score between two fiber skeletons."""
+        self_pts = np.argwhere(self.data > 0) + [self.bbox.y, self.bbox.x]
+        other_pts = np.argwhere(other.data > 0) + [other.bbox.y, other.bbox.x]
+
+        if len(self_pts) == 0 or len(other_pts) == 0:
+            return 0.0
+
+        tree_other = cKDTree(other_pts)
+        dist_self, _ = tree_other.query(self_pts)
+
+        tree_self = cKDTree(self_pts)
+        dist_other, _ = tree_self.query(other_pts)
+
+        frac_self = np.mean(dist_self <= max_distance)
+        frac_other = np.mean(dist_other <= max_distance)
+
+        return min(frac_self, frac_other)
+
     def bbox_iou(self, other) -> float:
         """
         Compute the Intersection over Union (IoU) of the bounding boxes of two fibers.
@@ -341,6 +365,16 @@ class Fibers:
     def greens(self):
         return [fiber.green for fiber in self.fibers]
 
+    def __add__(self, other):
+        if isinstance(other, Fibers):
+            return Fibers(self.fibers + other.fibers)
+        else:
+            raise TypeError(
+                "Unsupported operand type(s) for +: 'Fibers' and '{}'".format(
+                    type(other).__name__
+                )
+            )
+
     def get_labelmap(self, h, w, fiber_width=1):
         labelmap = np.zeros((h, w), dtype=np.uint8)
         for fiber in self.fibers:
@@ -389,7 +423,7 @@ class Fibers:
 
     def contains(self, fiber: FiberProps, ratio=0.5):
         for existing_fiber in self.fibers:
-            if existing_fiber.bbox_intersect(fiber, ratio):
+            if existing_fiber.overlaps(fiber, ratio):
                 return True
         return False
 
@@ -444,27 +478,32 @@ class Fibers:
             union.append_if_not_exists(fiber, ratio)
         return union
 
-    def difference(self, other, ratio):
-        substract = Fibers([])
-        intersection = self.intersection(other, ratio)
+    def difference(self, other, ratio=0.5):
+        result = Fibers([])
         for fiber in self.fibers:
-            if not intersection.contains(fiber, ratio):
-                substract.append_if_not_exists(fiber, ratio)
-        return substract
+            found = False
+            for other_fiber in other:
+                if fiber.overlaps(other_fiber, ratio):
+                    found = True
+                    break
+            if not found:
+                result.append(fiber)
+        return result
 
     def intersection(self, other, ratio=0.5):
         intersection = Fibers([])
         for fiber in self.fibers:
             for other_fiber in other:
-                if fiber.bbox_intersect(other_fiber, ratio):
-                    intersection.append_if_not_exists(fiber, ratio)
+                if fiber.overlaps(other_fiber, ratio):
+                    intersection.append(fiber)
+                    break  # found a match, no need to check remaining
         return intersection
 
     def joined_intersection(self, other, ratio=0.5):
         intersection = []
         for fiber in self.fibers:
             for other_fiber in other.fibers:
-                if fiber.bbox_intersect(other_fiber, ratio):
+                if fiber.overlaps(other_fiber, ratio):
                     (intersection.append((fiber, other_fiber)))
         return intersection
 
@@ -572,10 +611,6 @@ class Fibers:
             for fiber in other
         ]
         return Fibers(copied_fibers, path=other.path)
-
-    def __add__(self, other: "Fibers") -> "Fibers":
-        combined_fibers = self.fibers + other.fibers
-        return Fibers(combined_fibers)
 
     def __reduce__(self):
         return (self.__class__, (self.fibers, self.path))

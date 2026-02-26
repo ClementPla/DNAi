@@ -73,7 +73,7 @@ def generate_svg(fiber: FiberProps, scale=1.0, color1="red", color2="green") -> 
 
 
 def match_fibers_pairs(
-    fibers1: Fibers, fibers2: Fibers, overlap_ratio=10
+    fibers1: Fibers, fibers2: Fibers, overlap_ratio=0.5
 ) -> list[tuple[FiberProps, FiberProps]]:
     n, m = len(fibers1), len(fibers2)
     if n == 0 or m == 0:
@@ -83,7 +83,7 @@ def match_fibers_pairs(
     iou_matrix = np.zeros((n, m))
     for i, fiber in enumerate(fibers1):
         for j, other_fiber in enumerate(fibers2):
-            iou_matrix[i, j] = fiber.bbox_iou(other_fiber)
+            iou_matrix[i, j] = fiber.skeleton_similarity(other_fiber)
 
     # Hungarian on negative IoU (minimize cost = maximize IoU)
     row_ind, col_ind = linear_sum_assignment(-iou_matrix)

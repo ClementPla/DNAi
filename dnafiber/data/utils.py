@@ -12,6 +12,7 @@ from dnafiber.postprocess.core import extract_fibers
 from time import time
 from skimage.morphology import skeletonize
 from skimage.segmentation import expand_labels
+from pathlib import Path
 
 
 def extract_bboxes(mask):
@@ -29,10 +30,10 @@ def extract_bboxes(mask):
     return bboxes
 
 
-def convert_rgb_to_mask(image, threshold=200):
+def convert_rgb_to_mask(image, threshold=150):
     output = np.zeros(image.shape[:2], dtype=np.uint8)
-    output[image[:, :, 0] > 150] = 1
-    output[image[:, :, 1] > 150] = 2
+    output[image[:, :, 0] > threshold] = 1
+    output[image[:, :, 1] > threshold] = 2
     binary_mask = output > 0
     skeleton = skeletonize(binary_mask) * output
     output = expand_labels(skeleton, 2)
@@ -127,6 +128,7 @@ def load_image(filepath, reverse_channel, pixel_size=0.13, verbose=False, clarit
     A cacheless version of the get_image function.
     This function does not use caching and is intended for use in scenarios where caching is not desired.
     """
+    filepath = Path(filepath)
     start = time()
     image = read_img(filepath)
     if verbose:

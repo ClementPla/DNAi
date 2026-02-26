@@ -3,10 +3,8 @@ import cv2
 from typing import List, Tuple
 from dnafiber.postprocess.skan import find_endpoints, compute_points_angle
 from scipy.spatial.distance import cdist
-from scipy.ndimage import distance_transform_edt
 from scipy.sparse.csgraph import connected_components
 from scipy.sparse import csr_array
-from skimage.morphology import skeletonize
 from dnafiber.postprocess.skan import find_line_intersection
 from dnafiber.postprocess.fiber import FiberProps, Bbox, Fibers
 from itertools import compress

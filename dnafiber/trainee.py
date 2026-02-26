@@ -122,7 +122,7 @@ class Trainee(LightningModule, PyTorchModelHubMixin):
         y_hat = self(x)
         loss = self.get_loss(y_hat, y)
         self.log("val_loss", loss, on_step=False, on_epoch=True, sync_dist=True)
-        self.metric.update(y_hat, y)
+        self.metric.update(y_hat.argmax(dim=1), y)
         return y_hat
 
     def on_validation_epoch_end(self):
@@ -160,57 +160,3 @@ class Trainee(LightningModule, PyTorchModelHubMixin):
 
         return labelmap, pos_pred
 
-
-class TraineeMaskRCNN(Trainee):
-    def __init__(self, learning_rate=0.001, weight_decay=0.0002, **model_config):
-        super().__init__(learning_rate, weight_decay, **model_config)
-        self.model = torchvision.models.get_model("maskrcnn_resnet50_fpn_v2")
-
-    def forward(self, x):
-        yhat = self.model(x)
-        return yhat
-
-    def training_step(self, batch, batch_idx):
-        image = batch["image"]
-        targets = batch["targets"]
-        loss_dict = self.model(image, targets)
-        losses = sum(loss for loss in loss_dict.values())
-        self.log("train_loss", losses, on_step=True, on_epoch=False, sync_dist=True)
-        return losses
-
-    def validation_step(self, batch, batch_idx):
-        image = batch["image"]
-        targets = batch["targets"]
-
-        predictions = self.model(image)
-        b = len(predictions)
-        predicted_masks = []
-        gt_masks = []
-        for i in range(b):
-            scores = predictions[i]["scores"]
-            masks = predictions[i]["masks"]
-            good_masks = masks[scores > 0.5]
-            # Combined into a single mask
-            good_masks = torch.sum(good_masks, dim=0)
-            predicted_masks.append(good_masks)
-            gt_masks.append(targets[i]["masks"].sum(dim=0))
-
-        gt_masks = torch.stack(gt_masks).squeeze(1) > 0
-        predicted_masks = torch.stack(predicted_masks).squeeze(1) > 0
-        self.metric.update(predicted_masks, gt_masks)
-        return predictions
-
-    def configure_optimizers(self):
-        optimizer = AdamW(
-            self.parameters(), lr=self.learning_rate, weight_decay=self.weight_decay
-        )
-        scheduler = CosineAnnealingLR(
-            optimizer,
-            T_max=self.trainer.max_epochs,  # type: ignore
-            eta_min=self.learning_rate / 25,
-        )
-        scheduler = {
-            "scheduler": scheduler,
-            "interval": "epoch",
-        }
-        return [optimizer], [scheduler]

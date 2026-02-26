@@ -37,12 +37,12 @@ def to_polar_space(image, mask):
 
 @D.nntools_wrapper
 def convert_mask(mask):
-    return convert_rgb_to_mask(mask=mask)
+    return convert_rgb_to_mask(image=mask)
 
 
 @D.nntools_wrapper
 def preprocess_fn(image):
-    preprocessed = preprocess(image, pixel_size=0.26, device="cpu")
+    preprocessed = preprocess(image, pixel_size=0.26, verbose=False)
     return {"image": preprocessed.astype(np.uint8)}
 
 
@@ -145,7 +145,7 @@ class FiberDatamodule(LightningDataModule):
         self.train.composer.add(*self.get_train_composer())
         self.val.composer.add(*self.cast_operators())
         self.test.composer.add(*self.cast_operators())
-
+        self.train.init_cache()
     def get_train_composer(self):
         transforms = []
         if self.crop_size is not None:
