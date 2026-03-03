@@ -61,7 +61,7 @@ def preprocess(img, pixel_size=0.13, verbose=True, clarity=1.0):
     del small_median
 
     # 5. FINAL PASS: SCALE AND SUBTRACT
-    for c in range(min(3, img.shape[2])):
+    for c in range(min(2, img.shape[2])):
         # Work on one channel at a time
         ch_float = img[:, :, c].astype(np.float32)
 
@@ -81,4 +81,5 @@ def preprocess(img, pixel_size=0.13, verbose=True, clarity=1.0):
         # Clip and Cast
         np.clip(ch_float, 0, 255, out=ch_float)
         result[:, :, c] = ch_float.astype(np.uint8)
+    result[:, :, 2] = 0
     return result

@@ -83,6 +83,7 @@ def create_boxen_plot(
     log_scale=True,
     rotate_xticks=45,
     ax=None,
+    show_counts=False,
     **kwargs,
 ):
     sns.boxplot(
@@ -106,6 +107,33 @@ def create_boxen_plot(
     ax.set_xticklabels(ax.get_xticklabels(), rotation=rotate_xticks, ha="center")
     ax.set_xlabel("")
     ax.grid(axis="y", linestyle="--", alpha=0.7)
+    if show_counts:
+        types = (
+            df["Type"].cat.categories
+            if hasattr(df["Type"], "cat")
+            else df["Type"].unique()
+        )
+        graders = (
+            df["Grader"].cat.categories
+            if hasattr(df["Grader"], "cat")
+            else df["Grader"].unique()
+        )
+        n_graders = len(graders)
+
+        for i, typ in enumerate(types):
+            for j, grader in enumerate(graders):
+                count = len(df[(df["Type"] == typ) & (df["Grader"] == grader)])
+                # Position each grader's label above its box
+                x_pos = i + (j - (n_graders - 1) / 2) * (0.8 / n_graders)
+                ax.text(
+                    x_pos,
+                    4,
+                    f"N={count}",
+                    ha="center",
+                    va="bottom",
+                    fontsize=10,
+                    color=palette[j] if isinstance(palette, list) else "black",
+                )
 
 
 def create_swarm_plot(
@@ -184,6 +212,7 @@ def create_boxen_swarmplot(
     ax=None,
     annotate=False,
     ylabel=None,
+    show_counts=False,
     **kwargs,
 ):
     # Always order the graders in the same way (Human first, then AI)
@@ -209,6 +238,7 @@ def create_boxen_swarmplot(
         boxprops=dict(alpha=0.5),
         column=column,
         ax=ax,
+        show_counts=show_counts,
         **kwargs,
     )
     create_swarm_plot(

@@ -140,19 +140,21 @@ def run_model(
     h_orig, w_orig = tensor.shape[2:]
     # The model was trained at 0.26µm/px, so we need to rescale the input accordingly.
     # The user provides the actual pixel size, and we compute the rescaling factor to match the training conditions.
-    rescale_factor = scale / 0.26
-    input_tensor = F.interpolate(
-        tensor,
-        size=(int(h_orig * rescale_factor), int(w_orig * rescale_factor)),
-        mode="bilinear",
-        antialias=True if rescale_factor < 1 else False,
-    )
+    if scale != 0.26:
+        rescale_factor = scale / 0.26
+        input_tensor = F.interpolate(
+            tensor,
+            size=(int(h_orig * rescale_factor), int(w_orig * rescale_factor)),
+            mode="bilinear",
+        )
+    else:
+        input_tensor = tensor
 
     # 2. Setup Sliding Window
     sw_inferer = SlidingWindowInferer(
         roi_size=(1024, 1024) if low_end_hardware else (1024, 1024),
         sw_batch_size=2 if low_end_hardware else 4,
-        overlap=0.1,
+        overlap=0.25,
         mode="gaussian",
         sw_device=device,
         device="cpu" if low_end_hardware else device,
@@ -208,7 +210,11 @@ def run_model(
             del model, exec_unit
             torch.cuda.empty_cache()
 
-    return F.interpolate(accumulated_probs, size=(h_orig, w_orig), mode="bilinear")
+    # Resize back to original dimensions if needed
+    if accumulated_probs.shape[2:] != (h_orig, w_orig):
+        return F.interpolate(accumulated_probs, size=(h_orig, w_orig), mode="bilinear")
+    else:
+        return accumulated_probs
 
 
 @torch.inference_mode()

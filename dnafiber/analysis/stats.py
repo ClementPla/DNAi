@@ -340,3 +340,134 @@ def find_grader_disagreements_cliff(
         results.append(row)
 
     return pd.DataFrame(results)
+
+
+from scipy.stats import mannwhitneyu
+
+
+def significance_stars(p):
+    if p < 0.001:
+        return "***"
+    elif p < 0.01:
+        return "**"
+    elif p < 0.05:
+        return "*"
+    else:
+        return "n.s."
+
+
+def add_significance_brackets(
+    ax,
+    df,
+    reference_type,
+    column="Ratio",
+    graders=None,
+    grader_colors=None,
+    y_start=None,
+    bracket_spacing_factor=1.15,
+    bracket_height_factor=1.03,
+    fontsize=12,
+    alternative="two-sided",
+):
+    """
+    Draw brackets from reference_type to each other condition,
+    annotated with Mann-Whitney U significance stars per grader.
+
+    Parameters
+    ----------
+    ax : matplotlib Axes
+    df : DataFrame with columns [column, "Type", "Grader"]
+    reference_type : str, the reference condition name
+    column : str, the column to test
+    graders : list of grader names (default: inferred from df)
+    grader_colors : dict mapping grader name -> color
+    y_start : float, y position for first bracket (default: auto)
+    bracket_spacing_factor : multiplicative spacing between brackets
+    bracket_height_factor : multiplicative height of bracket tip
+    fontsize : int
+    alternative : str, passed to mannwhitneyu
+    """
+    if graders is None:
+        graders = (
+            df["Grader"].cat.categories.tolist()
+            if hasattr(df["Grader"], "cat")
+            else df["Grader"].unique().tolist()
+        )
+
+    if grader_colors is None:
+        grader_colors = {g: "dimgray" for g in graders}
+
+    types = (
+        df["Type"].cat.categories.tolist()
+        if hasattr(df["Type"], "cat")
+        else df["Type"].unique().tolist()
+    )
+
+    ref_idx = types.index(reference_type)
+    other_types = [t for t in types if t != reference_type]
+
+    # Sort by distance to reference (shorter brackets first)
+    other_types = sorted(other_types, key=lambda t: abs(types.index(t) - ref_idx))
+
+    if y_start is None:
+        y_start = ax.get_ylim()[1] * 1.1
+
+    for i, typ in enumerate(other_types):
+        typ_idx = types.index(typ)
+
+        left = min(ref_idx, typ_idx) + 0.1
+        right = max(ref_idx, typ_idx) - 0.1
+
+        y_base = y_start * (bracket_spacing_factor**i)
+        y_top = y_base * bracket_height_factor
+
+        # Draw bracket
+        ax.plot(
+            [left, left, right, right],
+            [y_base, y_top, y_top, y_base],
+            color="dimgray",
+            linewidth=1.0,
+            clip_on=False,
+        )
+
+        # Compute significance for each grader
+        mid_x = (left + right) / 2
+        n_graders = len(graders)
+        total_width = 0.3 * (n_graders - 1)
+        x_positions = np.linspace(
+            mid_x - total_width / 2, mid_x + total_width / 2, n_graders
+        )
+
+        for x_pos, grader in zip(x_positions, graders):
+            ref_vals = df[(df["Type"] == reference_type) & (df["Grader"] == grader)][
+                column
+            ].dropna()
+            exp_vals = df[(df["Type"] == typ) & (df["Grader"] == grader)][
+                column
+            ].dropna()
+
+            if len(ref_vals) < 2 or len(exp_vals) < 2:
+                symbol = "?"
+            else:
+                _, p = mannwhitneyu(ref_vals, exp_vals, alternative=alternative)
+                symbol = significance_stars(p)
+
+            ax.annotate(
+                symbol,
+                xy=(x_pos, y_top),
+                xytext=(0, 3),
+                textcoords="offset points",
+                ha="center",
+                va="bottom",
+                fontsize=fontsize,
+                fontweight="bold" if symbol != "n.s." else "normal",
+                color=grader_colors.get(grader, "dimgray"),
+                clip_on=False,
+            )
+
+    # Adjust ylim
+    top_y = (
+        y_start * (bracket_spacing_factor ** len(other_types)) * bracket_spacing_factor
+    )
+    current_ylim = ax.get_ylim()
+    ax.set_ylim(top=max(current_ylim[1], top_y))

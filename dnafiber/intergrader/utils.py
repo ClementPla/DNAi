@@ -26,24 +26,55 @@ def load_gt(root: Path):
 
 
 def count_commons_fibers(
-    annotators_fibers: list[Fibers], indices_gt: Optional[slice] = None, ratio=0.8
-) -> np.array:
+    annotators_fibers: dict,
+    max_distance=5.0,
+    ratio=0.5,
+):
     """
-    For each of the N annotators, count the number of fibers found by 0, 1, ..., N-1 annotators.
-    :param: annotators_fibers: A list of Fibers objects from different annotators.
-    """
-    N = len(annotators_fibers)
-    if indices_gt is not None:
-        common_map = build_union_map_clustered(annotators_fibers[indices_gt], ratio)
-    else:
-        common_map = build_union_map_clustered(annotators_fibers, ratio)
-    results = np.zeros((len(common_map), N), dtype=bool)
-    for i, fiber in enumerate(common_map):
-        for j, annotator in enumerate(annotators_fibers):
-            if annotator.contains(fiber, ratio):
-                results[i, j] = True
+    For each fiber in the union, determine which annotators found it,
+    using cluster membership directly (no re-checking with contains).
 
-    return results
+    Returns:
+        all_counts: (n_union_fibers, n_annotators) boolean array
+        annotator_names: list of annotator names in column order
+    """
+    annotator_names = list(annotators_fibers.keys())
+
+    # Collect all fibers with their annotator index
+    all_fibers = []
+    fiber_annotator = []  # which annotator each fiber belongs to
+    for ann_idx, key in enumerate(annotator_names):
+        for fiber in annotators_fibers[key]:
+            all_fibers.append(fiber)
+            fiber_annotator.append(ann_idx)
+
+    n = len(all_fibers)
+    if n == 0:
+        return np.zeros((0, len(annotator_names)), dtype=bool), annotator_names
+
+    # Build adjacency and cluster
+    rows, cols = [], []
+    for i in range(n):
+        for j in range(i + 1, n):
+            # Skip pairs from the same annotator
+            if fiber_annotator[i] == fiber_annotator[j]:
+                continue
+            if all_fibers[i].skeleton_match(
+                all_fibers[j], max_distance=max_distance, ratio=ratio
+            ):
+                rows.extend([i, j])
+                cols.extend([j, i])
+
+    adj = csr_array((np.ones(len(rows)), (rows, cols)), shape=(n, n))
+    n_clusters, labels = connected_components(adj, directed=False)
+
+    # For each cluster, record which annotators are present
+    results = np.zeros((n_clusters, len(annotator_names)), dtype=bool)
+    for fiber_idx, cluster_id in enumerate(labels):
+        ann_idx = fiber_annotator[fiber_idx]
+        results[cluster_id, ann_idx] = True
+
+    return results, annotator_names
 
 
 def build_union_map(annotators_fibers: list[Fibers], ratio=0.8) -> Fibers:
@@ -58,33 +89,7 @@ def build_union_map(annotators_fibers: list[Fibers], ratio=0.8) -> Fibers:
     return union_map
 
 
-def build_union_map_clustered(annotators_fibers, ratio=0.5, max_distance=5.0):
-    all_fibers = []
-    for annotator in annotators_fibers:
-        for fiber in annotator:
-            all_fibers.append(fiber)
-
-    n = len(all_fibers)
-    rows, cols = [], []
-    for i in range(n):
-        for j in range(i + 1, n):
-            if all_fibers[i].overlaps(all_fibers[j], ratio):
-                rows.extend([i, j])
-                cols.extend([j, i])
-
-    adj = csr_array((np.ones(len(rows)), (rows, cols)), shape=(n, n))
-    n_components, labels = connected_components(adj, directed=False)
-
-    # Pick one representative per cluster (e.g., first fiber)
-    union = Fibers([])
-    for c in range(n_components):
-        idx = np.where(labels == c)[0][0]
-        union.append(all_fibers[idx])
-
-    return union
-
-
-def build_union_map_clustered_v2(annotators_fibers, max_distance=5.0, ratio=0.5):
+def build_union_map_clustered(annotators_fibers, max_distance=5.0, ratio=0.5):
     """Build a union map using connected components to avoid order-dependent merging."""
     all_fibers = []
     for annotator in annotators_fibers:
@@ -124,8 +129,8 @@ def get_fibers_found_only_per_ai(
     :param: human_fibers: A list of Fibers objects from different human annotators.
     :param: ai_fibers: A Fibers object from the AI annotator.
     """
-    union_human = build_union_map_clustered(human_fibers, ratio)
-    only_ai = ai_fibers.difference(union_human, ratio)
+    union_human, _, _ = build_union_map_clustered(human_fibers, ratio=ratio)
+    only_ai = ai_fibers.difference(union_human, ratio=ratio)
     return only_ai
 
 
@@ -137,8 +142,8 @@ def get_fibers_found_per_ai_and_humans(
     :param: human_fibers: A list of Fibers objects from different human annotators.
     :param: ai_fibers: A Fibers object from the AI annotator.
     """
-    union_human = build_union_map_clustered(human_fibers, ratio)
-    common_ai_humans = ai_fibers.intersection(union_human, ratio)
+    union_human, _, _ = build_union_map_clustered(human_fibers, ratio=ratio)
+    common_ai_humans = ai_fibers.intersection(union_human, ratio=ratio)
     return common_ai_humans
 
 
@@ -152,7 +157,9 @@ def compute_agreement_stats(
         total_distinct: total number of distinct fibers in the union
         found_by_all: number of fibers found by all annotators
         pct_found_by_all: percentage found by all
-        pct_unique_per_annotator: average % of fibers unique to one annotator
+        avg_pct_unique: average % of fibers unique to one annotator
+        recall_per_annotator: recall of each annotator against the union
+        avg_recall: average recall across annotators
     """
     total_distinct = 0
     found_by_all = 0
@@ -163,7 +170,7 @@ def compute_agreement_stats(
         humans_annotations = [all_types_annotations[h] for h in human_keys]
 
         # Build clustered union
-        union, labels, all_fibers = build_union_map_clustered_v2(
+        union, labels, all_fibers = build_union_map_clustered(
             humans_annotations, max_distance=max_distance, ratio=ratio
         )
 
@@ -171,7 +178,6 @@ def compute_agreement_stats(
         total_distinct += n_clusters
 
         # Track which annotator contributed to each cluster
-        # Build annotator index for each fiber
         annotator_ids = []
         for ann_idx, annotator in enumerate(humans_annotations):
             for _ in annotator:
@@ -202,7 +208,7 @@ def compute_agreement_stats(
 
     pct_found_by_all = found_by_all / total_distinct * 100 if total_distinct > 0 else 0
 
-    # Average % unique per annotator (unique / total for that annotator)
+    # Average % unique per annotator
     pct_unique = []
     for key in human_keys:
         if total_per_annotator[key] > 0:
@@ -211,20 +217,30 @@ def compute_agreement_stats(
             )
         else:
             pct_unique.append(0)
-
     avg_pct_unique = np.mean(pct_unique)
+
+    # Recall per annotator against the union
+    recall_per_annotator = {}
+    for key in human_keys:
+        if total_distinct > 0:
+            recall_per_annotator[key] = total_per_annotator[key] / total_distinct * 100
+        else:
+            recall_per_annotator[key] = 0.0
+    avg_recall = np.mean(list(recall_per_annotator.values()))
 
     print(f"Total distinct fibers: {total_distinct}")
     print(
         f"Found by all {len(human_keys)} annotators: {found_by_all} ({pct_found_by_all:.1f}%)"
     )
     print(f"Average % unique to one annotator: {avg_pct_unique:.1f}%")
+    print(f"Average recall against union: {avg_recall:.1f}%")
     print()
     for key in human_keys:
         print(
             f"  {key}: {total_per_annotator[key]} total, "
             f"{unique_per_annotator[key]} unique "
-            f"({unique_per_annotator[key] / total_per_annotator[key] * 100:.1f}%)"
+            f"({unique_per_annotator[key] / total_per_annotator[key] * 100:.1f}%), "
+            f"recall: {recall_per_annotator[key]:.1f}%"
         )
 
     return {
@@ -234,4 +250,6 @@ def compute_agreement_stats(
         "avg_pct_unique": avg_pct_unique,
         "unique_per_annotator": unique_per_annotator,
         "total_per_annotator": total_per_annotator,
+        "recall_per_annotator": recall_per_annotator,
+        "avg_recall": avg_recall,
     }
