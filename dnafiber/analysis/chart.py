@@ -161,7 +161,14 @@ def create_swarm_plot(
         )
     else:
         sns.swarmplot(
-            data=df, x="Type", y=column, hue="Grader", palette=palette, ax=ax, **kwargs
+            data=df,
+            x="Type",
+            y=column,
+            hue="Grader",
+            palette=palette,
+            ax=ax,
+            dodge=True,
+            **kwargs,
         )
     if ax is None:
         ax = plt.gca()

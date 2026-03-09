@@ -399,3 +399,37 @@ def load_exp11(root_pred, root_excel):
     )
 
     return df
+
+
+def load_fork_protection(root_pred, root_excel, replicate="n=1"):
+    df_human = pd.read_excel(root_excel, sheet_name=replicate, header=0)
+    df_human.dropna(inplace=True)  # Remove rows with NaN values
+    # Stacked all columns and use the header as the "Type" column
+    df_human = df_human.melt(var_name="Type", value_name="Ratio")
+    df_human["Grader"] = Grader.HUMAN
+
+    remap = {
+        "5hr\xa0HU\xa0U2OS-GFP": "U2OS-GFP HU",
+        "5hr\xa0HU\xa0U2OS-RPA": "U2OS-RPA HU",
+        "+ATRi\xa05hr\xa0HU\xa0U2OS-GFP": "U2OS-GFP HU + ATRi",
+        "+ATRi\xa05hr\xa0HU\xa0U2OS-RPA": "U2OS-RPA HU + ATRi",
+    }
+    df_human["Type"] = df_human["Type"].map(remap)
+
+    # Load AI predictions
+    dfs = []
+    for dir in root_pred.iterdir():
+        if not dir.is_dir():
+            continue
+        list_of_files = list(dir.rglob("*.pkl"))
+        for file in list_of_files:
+            predictions = Fibers.from_pickle(file).only_double_copy().filter_errors(0.5)
+            df = predictions.to_df(pixel_size=0.1064)
+            df["Type"] = dir.stem
+            dfs.append(df)
+    combined_df = pd.concat(dfs, ignore_index=True)
+    combined_df["Grader"] = Grader.AI
+    df = pd.concat([df_human, combined_df], ignore_index=True)
+    type_order = list(remap.values())
+    df["Type"] = pd.Categorical(df["Type"], categories=type_order, ordered=True)
+    return df

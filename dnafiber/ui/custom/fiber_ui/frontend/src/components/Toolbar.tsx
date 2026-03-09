@@ -52,6 +52,74 @@ const FONT =
   "'SF Mono', 'Cascadia Code', 'Fira Code', 'JetBrains Mono', monospace"
 
 /* ------------------------------------------------------------------ */
+/*  Theme-aware color palette                                          */
+/* ------------------------------------------------------------------ */
+
+interface ThemeColors {
+  fg: string
+  fgHover: string
+  fgActive: string
+  fgMuted: string
+  fgVeryMuted: string
+  fgSubtle: string
+  bgBtn: string
+  bgBtnHover: string
+  bgGroup: string
+  borderGroup: string
+  accent: string
+  accentBg: string
+  accentBgHover: string
+  accentHover: string
+  ring: string
+  success: string
+}
+
+function buildColors(theme: any): ThemeColors {
+  const bg = theme?.colors?.backgroundPrimary ?? "#000000"
+  // const isDark = bg.charAt(1) < "8"
+  const isDark = true
+  if (isDark) {
+    return {
+      fg: "rgba(255,255,255,0.72)",
+      fgHover: "#fff",
+      fgActive: "rgba(255,255,255,0.85)",
+      fgMuted: "rgba(255,255,255,0.4)",
+      fgVeryMuted: "rgba(255,255,255,0.22)",
+      fgSubtle: "rgba(255,255,255,0.35)",
+      bgBtn: "rgba(255,255,255,0.05)",
+      bgBtnHover: "rgba(255,255,255,0.12)",
+      bgGroup: "rgba(255,255,255,0.03)",
+      borderGroup: "rgba(255,255,255,0.06)",
+      accent: "#7EB8FF",
+      accentBg: "rgba(99,162,255,0.12)",
+      accentBgHover: "rgba(99,162,255,0.25)",
+      accentHover: "#9ECBFF",
+      ring: "rgba(255,255,255,0.06)",
+      success: "#66BB6A",
+    }
+  }
+
+  return {
+    fg: "rgba(0,0,0,0.65)",
+    fgHover: "#000",
+    fgActive: "rgba(0,0,0,0.85)",
+    fgMuted: "rgba(0,0,0,0.4)",
+    fgVeryMuted: "rgba(0,0,0,0.22)",
+    fgSubtle: "rgba(0,0,0,0.35)",
+    bgBtn: "rgba(0,0,0,0.04)",
+    bgBtnHover: "rgba(0,0,0,0.08)",
+    bgGroup: "rgba(0,0,0,0.02)",
+    borderGroup: "rgba(0,0,0,0.08)",
+    accent: "#1a6ddb",
+    accentBg: "rgba(26,109,219,0.08)",
+    accentBgHover: "rgba(26,109,219,0.15)",
+    accentHover: "#1459b5",
+    ring: "rgba(0,0,0,0.08)",
+    success: "#2e7d32",
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /*  ToolBtn                                                            */
 /* ------------------------------------------------------------------ */
 
@@ -83,6 +151,7 @@ interface ToolBtnProps {
   disabled?: boolean
   accent?: boolean
   title?: string
+  colors: ThemeColors
 }
 
 const ToolBtn: React.FC<ToolBtnProps> = ({
@@ -93,13 +162,14 @@ const ToolBtn: React.FC<ToolBtnProps> = ({
   disabled,
   accent,
   title,
+  colors,
 }) => {
   const [hovered, setHovered] = React.useState(false)
 
-  const bg = accent ? "rgba(99,162,255,0.12)" : "rgba(255,255,255,0.05)"
-  const bgHover = accent ? "rgba(99,162,255,0.25)" : "rgba(255,255,255,0.12)"
-  const fg = accent ? "#7EB8FF" : "rgba(255,255,255,0.72)"
-  const fgHover = accent ? "#9ECBFF" : "#fff"
+  const bg = accent ? colors.accentBg : colors.bgBtn
+  const bgHover = accent ? colors.accentBgHover : colors.bgBtnHover
+  const fg = accent ? colors.accent : colors.fg
+  const fgHover = accent ? colors.accentHover : colors.fgHover
 
   return (
     <button
@@ -140,7 +210,8 @@ const SwitchRow: React.FC<{
   checked: boolean
   onChange: (v: boolean) => void
   label: string
-}> = ({ checked, onChange, label }) => (
+  colors: ThemeColors
+}> = ({ checked, onChange, label, colors }) => (
   <label
     style={{
       display: "flex",
@@ -148,7 +219,7 @@ const SwitchRow: React.FC<{
       gap: 6,
       cursor: "pointer",
       fontSize: 11,
-      color: checked ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.4)",
+      color: checked ? colors.fgActive : colors.fgMuted,
       fontFamily: FONT,
       fontWeight: 500,
       transition: "color 0.15s",
@@ -175,7 +246,8 @@ const SwitchRow: React.FC<{
 const GroupPill: React.FC<{
   children: React.ReactNode
   label?: string
-}> = ({ children, label }) => (
+  colors: ThemeColors
+}> = ({ children, label, colors }) => (
   <div
     style={{
       display: "flex",
@@ -191,7 +263,7 @@ const GroupPill: React.FC<{
           fontWeight: 600,
           textTransform: "uppercase",
           letterSpacing: "0.08em",
-          color: "rgba(255,255,255,0.22)",
+          color: colors.fgVeryMuted,
           fontFamily: FONT,
           paddingLeft: 6,
           marginBottom: 2,
@@ -206,8 +278,8 @@ const GroupPill: React.FC<{
         display: "flex",
         alignItems: "center",
         gap: 4,
-        background: "rgba(255,255,255,0.03)",
-        border: "1px solid rgba(255,255,255,0.06)",
+        background: colors.bgGroup,
+        border: `1px solid ${colors.borderGroup}`,
         borderRadius: 8,
         padding: "3px 5px",
       }}
@@ -224,7 +296,8 @@ const GroupPill: React.FC<{
 const ProgressRing: React.FC<{
   inspected: number
   total: number
-}> = ({ inspected, total }) => {
+  colors: ThemeColors
+}> = ({ inspected, total, colors }) => {
   const pct = total > 0 ? (inspected / total) * 100 : 0
   const done = inspected >= total && total > 0
   const circumference = 2 * Math.PI * 9
@@ -266,7 +339,7 @@ const ProgressRing: React.FC<{
             cy={11}
             r={9}
             fill="none"
-            stroke="rgba(255,255,255,0.06)"
+            stroke={colors.ring}
             strokeWidth={2.5}
           />
           <circle
@@ -274,7 +347,7 @@ const ProgressRing: React.FC<{
             cy={11}
             r={9}
             fill="none"
-            stroke={done ? "#66BB6A" : "#7EB8FF"}
+            stroke={done ? colors.success : colors.accent}
             strokeWidth={2.5}
             strokeDasharray={`${(pct / 100) * circumference} ${circumference}`}
             strokeLinecap="round"
@@ -291,7 +364,7 @@ const ProgressRing: React.FC<{
               alignItems: "center",
               justifyContent: "center",
               fontSize: 9,
-              color: "#66BB6A",
+              color: colors.success,
             }}
           >
             ✓
@@ -302,7 +375,7 @@ const ProgressRing: React.FC<{
         style={{
           fontSize: 10,
           fontFamily: FONT,
-          color: done ? "#66BB6A" : "rgba(255,255,255,0.5)",
+          color: done ? colors.success : colors.fgSubtle,
           fontWeight: 600,
           letterSpacing: "-0.02em",
         }}
@@ -361,6 +434,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   selectedCount,
   theme,
 }) => {
+  const colors = React.useMemo(() => buildColors(theme), [theme])
+
   return (
     <div
       style={{
@@ -372,6 +447,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         overflowX: "auto",
         overflowY: "hidden",
         whiteSpace: "nowrap",
+        backgroundColor: "rgba(30, 30, 30, 0.95)", // Force dark background
         // CSS vars for Switch component
         // @ts-ignore
         "--color-gray-100": theme?.colors?.backgroundTertiary ?? "#f0f0f0",
@@ -382,26 +458,38 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       }}
     >
       {/* ── View ── */}
-      <GroupPill label="View">
+      <GroupPill label="View" colors={colors}>
         <ToolBtn
           icon={Icons.layers}
           label={showOnlyPolylines ? "Image" : "Traces"}
           kbd="T"
           onClick={onTogglePolylines}
           title="Toggle between image and polyline-only view"
+          colors={colors}
         />
         <ToolBtn
           icon={Icons.crosshair}
           label="Recenter"
           onClick={onRecenter}
           title="Reset zoom & pan"
+          colors={colors}
         />
-        <SwitchRow checked={hideBbox} onChange={onSetHideBbox} label="BBox" />
-        <SwitchRow checked={animated} onChange={onSetAnimated} label="Anim" />
+        <SwitchRow
+          checked={hideBbox}
+          onChange={onSetHideBbox}
+          label="BBox"
+          colors={colors}
+        />
+        <SwitchRow
+          checked={animated}
+          onChange={onSetAnimated}
+          label="Anim"
+          colors={colors}
+        />
       </GroupPill>
 
       {/* ── Stroke ── */}
-      <GroupPill label="Stroke">
+      <GroupPill label="Stroke" colors={colors}>
         <div style={{ width: 140, padding: "0 6px" }}>
           <Slider
             value={strokeScale}
@@ -422,9 +510,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                   width: "12px",
                   height: "12px",
                   borderRadius: "50%",
-                  backgroundColor: "#7EB8FF",
+                  backgroundColor: colors.accent,
                   borderColor: "transparent",
-                  boxShadow: "0 0 6px rgba(126,184,255,0.35)",
+                  boxShadow: `0 0 6px ${colors.accentBg}`,
                 }),
               },
               Track: {
@@ -437,7 +525,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 style: () => ({
                   height: "3px",
                   borderRadius: "2px",
-                  background: "rgba(126,184,255,0.3)",
+                  background: colors.accentBg,
                 }),
               },
             }}
@@ -446,7 +534,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         <span
           style={{
             fontSize: 10,
-            color: "rgba(255,255,255,0.35)",
+            color: colors.fgSubtle,
             fontFamily: FONT,
             minWidth: 28,
             textAlign: "right",
@@ -458,7 +546,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       </GroupPill>
 
       {/* ── Inspect ── */}
-      <GroupPill label="Inspect">
+      <GroupPill label="Inspect" colors={colors}>
         <ToolBtn
           icon={Icons.skipForward}
           label="Next"
@@ -467,29 +555,37 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           disabled={inspectedCount >= totalCount}
           accent
           title="Navigate to next uninspected fiber"
+          colors={colors}
         />
         <SwitchRow
           checked={hideInspected}
           onChange={onSetHideInspected}
           label="Hide done"
+          colors={colors}
         />
-        <ProgressRing inspected={inspectedCount} total={totalCount} />
+        <ProgressRing
+          inspected={inspectedCount}
+          total={totalCount}
+          colors={colors}
+        />
       </GroupPill>
 
       {/* ── Actions ── */}
-      <GroupPill label="Actions">
+      <GroupPill label="Actions" colors={colors}>
         <ToolBtn
           icon={Icons.filter}
           label="Filter"
           kbd="F"
           onClick={onToggleSidebar}
           title="Toggle fiber type filter panel"
+          colors={colors}
         />
         <ToolBtn
           icon={Icons.rotateCcw}
           label="Reset"
           onClick={onResetAll}
           title="Clear all selections and inspections"
+          colors={colors}
         />
         <ToolBtn
           icon={Icons.send}
@@ -498,6 +594,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           disabled={selectedCount === 0}
           accent
           title="Send selected fiber IDs to Streamlit"
+          colors={colors}
         />
       </GroupPill>
     </div>

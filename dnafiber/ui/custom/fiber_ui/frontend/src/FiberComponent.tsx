@@ -138,7 +138,7 @@ function FiberComponent(
 
   // --- Scale info ---
   const { barPx, label } = getScaleInfo(pixel_size, currentScale, fitScale)
-  const themeMode = theme?.base === "dark" ? LightTheme : DarkTheme
+  const themeMode = theme?.base === "dark" ? DarkTheme : LightTheme
 
   // --- Effects ---
   useEffect(() => {
@@ -261,7 +261,6 @@ function FiberComponent(
             selectedCount={inspection.selectedFibers.length}
             theme={theme}
           />
-
           <div
             style={{
               display: "flex",
@@ -487,7 +486,6 @@ function FiberComponent(
               totalCount={elements.length}
             />
           </div>
-
           {/* ──── Context Menu ──── */}
           {contextMenu && (
             <ContextMenu

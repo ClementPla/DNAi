@@ -22,8 +22,8 @@ RUN apt-get update && apt-get install -y \
 RUN pip install light-the-torch && ltt install --pytorch-computation-backend=cu121 torch torchvision
 
 # Invalidate the cache from this point on if the library version changes
-ADD https://api.github.com/repos/ClementPla/DeepFiberQ/git/refs/heads/relabelled version.json
-RUN git clone -b relabelled https://github.com/ClementPla/DeepFiberQ.git
+ADD https://api.github.com/repos/ClementPla/DeepFiberQ/git/refs/heads/main version.json
+RUN git clone -b main https://github.com/ClementPla/DeepFiberQ.git
 WORKDIR "DeepFiberQ/"
 RUN pip install .
 EXPOSE 8501

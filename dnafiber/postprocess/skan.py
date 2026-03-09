@@ -430,7 +430,7 @@ def find_endpoints(skel):
 
 @njit
 def compute_trace_counts(trace, data):
-    """Compute arc-length-weighted red and green distances along a trace."""
+    """Compute the red and green distances along a trace."""
     n = len(trace)
     red = 0.0
     green = 0.0

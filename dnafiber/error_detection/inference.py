@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import streamlit as st
 
 if TYPE_CHECKING:
-    from dnafiber.postprocess.fiber import Fibers, FiberProps
+    from dnafiber.postprocess.fiber import Fibers
 
 
 def detect_error(
@@ -73,7 +73,9 @@ def detect_error(
             batch_features = features[i : i + batch_size]
             batch_preds = torch.sigmoid(correction_model(batch_inputs, batch_features))
 
-            predictions.extend(batch_preds.cpu().numpy())
+            preds_flat = batch_preds.detach().cpu().numpy().reshape(-1)
+            predictions.extend(preds_flat)
+
     for fiber, pred in zip(fibers, predictions):
         fiber.proba_error = float(pred)
     progress_bar.empty()

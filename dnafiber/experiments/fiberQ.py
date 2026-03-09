@@ -7,5 +7,5 @@ def load_fibers_from_pred_folder(pred_folder_path: str | Path):
     all_files = list(pred_folder_path.rglob("*Segm_Clean.png"))
     fibers_dict = dict()
     for file in all_files:
-        fibers_dict[str(file.parent.name)] = mask_filepath_to_fibers(file)
+        fibers_dict[file.parent] = mask_filepath_to_fibers(file)
     return fibers_dict
