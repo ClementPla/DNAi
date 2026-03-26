@@ -13,6 +13,7 @@
     <a href="#">
       <img src="https://img.shields.io/badge/License-MIT-green.svg" alt="License"/>
     </a>
+    <a href="https://doi.org/10.5281/zenodo.19237853"><img src="https://zenodo.org/badge/927956016.svg" alt="DOI"></a>
   </p>
 </p>
 
