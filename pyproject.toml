@@ -60,6 +60,7 @@ dependencies = [
     "scikit-image>=0.22.0",
     "numba>=0.59.0",
     "psutil>=5.9.0",
+    "nd2>=0.11.3",
     # Misc
     "catppuccin>=2.0.0",
     "python-dotenv>=1.0.0",  # Note: 'dotenv' is a different package

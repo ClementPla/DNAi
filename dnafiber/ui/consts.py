@@ -8,3 +8,5 @@ class DefaultValues:
     LOW_END_HARDWARE = False
     CLARITY = 1.0
     DETECT_ERRORS = True
+    COLOR_ANALOG_1 = "#FF0000"
+    COLOR_ANALOG_2 = "#00FF00"

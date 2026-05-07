@@ -2,10 +2,8 @@ import streamlit as st
 
 from dnafiber.data.utils import load_image, load_multifile_image
 import cv2
-import numpy as np
 from dnafiber.ui.consts import DefaultValues as DV
 from dnafiber.model.utils import _get_model
-import torch
 
 MAX_WIDTH = 1024
 MAX_HEIGHT = 1024
@@ -57,22 +55,6 @@ def get_resized_image(_image, id):
     return resized_image
 
 
-def bokeh_imshow(fig, image):
-    # image is a numpy array of shape (h, w, 3) or (h, w) of type uint8
-    if len(image.shape) == 2:
-        # grayscale image
-        image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
-
-    # Convert to h*w with uint32
-    img = np.empty((image.shape[0], image.shape[1]), dtype=np.uint32)
-    view = img.view(dtype=np.uint8).reshape((image.shape[0], image.shape[1], 4))  # RGBA
-    view[:, :, 0] = image[:, :, 0]
-    view[:, :, 1] = image[:, :, 1]
-    view[:, :, 2] = image[:, :, 2]
-    view[:, :, 3] = 255  # Alpha channel
-    fig.image_rgba(image=[img], x=0, y=0, dw=image.shape[1], dh=image.shape[0])
-
-
 def build_inference_id(file_id, model_name, use_tta, low_end_hardware) -> str:
     """_summary_
 
@@ -100,7 +82,8 @@ def build_inference_id(file_id, model_name, use_tta, low_end_hardware) -> str:
     return inference_id
 
 
-def build_file_id(file, pixel_size, reverse_channels, clarity) -> str:
+def build_file_id(entry, pixel_size, reverse_channels, clarity) -> str:
+    file = entry["sources"]
     if isinstance(file, tuple):
         file_id = str(hash(file[0] if file[0] is not None else file[1]))
     else:
@@ -144,26 +127,13 @@ def init_session_states():
         st.session_state["analog_1_files"] = []
 
 
+_WIDGET_KEY_PREFIXES_TO_SKIP = ("role_del_",)  # buttons in loops
+
+
 def retain_session_state(ss):
     state_vars = ss.keys()
     for var in state_vars:
+        if var.startswith(_WIDGET_KEY_PREFIXES_TO_SKIP):
+            continue
         if var in ss and not var.startswith("FormSubmitter"):
             ss[var] = ss[var]
-
-
-def create_display_files(files):
-    if files is None or len(files) == 0:
-        return "No files uploaded"
-    display_files = []
-    for file in files:
-        if isinstance(file, tuple):
-            if file[0] is None:
-                name = f"Second analog only {file[1].name}"
-            elif file[1] is None:
-                name = f"First analog only {file[0].name}"
-            else:
-                name = f"{file[0].name} and {file[1].name}"
-            display_files.append(name)
-        else:
-            display_files.append(file.name)
-    return display_files

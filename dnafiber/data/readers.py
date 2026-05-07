@@ -3,6 +3,8 @@ from tifffile import imread
 import cv2
 import numpy as np
 
+from dnafiber.data.nd2_format import stitch_nd2_combined
+
 
 def format_raw_image(image):
     if image.ndim == 2:
@@ -43,7 +45,27 @@ def read_dv(filepath):
     return data
 
 
-def read_img(filepath) -> np.ndarray:
+def read_nd2(
+    filepath,
+    max_gap_factor=1.0,
+    global_scale=1.0,
+    flip_x=True,
+    flip_y=True,
+    multitile_strategy: str = "compact",
+):
+    data = stitch_nd2_combined(
+        filepath,
+        max_gap_factor=max_gap_factor,
+        global_scale=global_scale,
+        flip_x=flip_x,
+        flip_y=flip_y,
+        multitile_strategy=multitile_strategy,
+    )
+    data = format_raw_image(data)
+    return data
+
+
+def read_img(filepath, multitile_strategy: str = "compact") -> np.ndarray:
     filename = str(filepath.name)
     if filename.endswith(".czi"):
         return read_czi(filepath)
@@ -51,6 +73,8 @@ def read_img(filepath) -> np.ndarray:
         return read_tiff(filepath)
     elif filename.endswith(".dv"):
         return read_dv(filepath)
+    elif filename.endswith(".nd2"):
+        return read_nd2(filepath, multitile_strategy=multitile_strategy)
     elif (
         filename.endswith(".png")
         or filename.endswith(".jpg")

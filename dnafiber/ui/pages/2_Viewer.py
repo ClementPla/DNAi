@@ -11,7 +11,6 @@ from dnafiber.ui.components import (
     model_configuration_inputs,
     performance_button,
     pixel_size_input,
-    reverse_channels_input,
     show_fibers,
     table_components,
     distribution_analysis,
@@ -24,15 +23,13 @@ from dnafiber.ui.inference import (
     get_postprocess_model,
     ui_inference,
 )
+from dnafiber.ui.io import build_entry_id, get_image_from_entry
 from dnafiber.ui.utils import (
-    build_file_id,
     build_inference_id,
-    get_image,
-    get_multifile_image,
     get_resized_image,
 )
 from dnafiber.ui.consts import DefaultValues as DV
-from dnafiber.ui.utils import retain_session_state, create_display_files
+from dnafiber.ui.utils import retain_session_state
 from dnafiber.ui.hardware import sidebar_diagnostics
 
 retain_session_state(st.session_state)
@@ -57,29 +54,8 @@ st.markdown(
 
 
 def on_session_start():
-    can_start = (
-        st.session_state.get("files_uploaded", None) is not None
-        and len(st.session_state.files_uploaded) > 0
-    )
-
-    if can_start:
-        return can_start
-
-    cldu_exists = (
-        st.session_state.get("analog_2_files", None) is not None
-        and len(st.session_state.analog_2_files) > 0
-    )
-    idu_exists = (
-        st.session_state.get("analog_1_files", None) is not None
-        and len(st.session_state.analog_1_files) > 0
-    )
-
-    if cldu_exists and idu_exists:
-        if len(st.session_state.get("analog_2_files")) != len(
-            st.session_state.get("analog_1_files")
-        ):
-            st.error("Please upload the same number of CldU and IdU files.")
-            return False
+    files = st.session_state.get("files_uploaded") or []
+    return len(files) > 0
 
 
 def start_inference(
@@ -140,6 +116,8 @@ def start_inference(
     tab_viewer, tab_mosaic, tab_table, tab_distributions = st.tabs(
         ["Viewer", "Mosaic", "Table", "Distribution"]
     )
+    color1 = st.session_state.get("color_analog_1", DV.COLOR_ANALOG_1)
+    color2 = st.session_state.get("color_analog_2", DV.COLOR_ANALOG_2)
 
     with tab_viewer:
         max_dim = max(org_h, org_w)
@@ -155,8 +133,8 @@ def start_inference(
             rescaled_image,
             prediction.svgs(
                 scale=scale,
-                color1=st.session_state.get("color1", "red"),
-                color2=st.session_state.get("color2", "green"),
+                color1=color1,
+                color2=color2,
             ),
             pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
             error_threshold=prediction_threshold,
@@ -171,8 +149,8 @@ def start_inference(
             image_mosaic,
             prediction_mosaic.svgs(
                 scale=1,
-                color1=st.session_state.get("color1", "red"),
-                color2=st.session_state.get("color2", "green"),
+                color1=color1,
+                color2=color2,
             ),
             pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
             error_threshold=prediction_threshold,
@@ -267,9 +245,8 @@ def start_inference(
 if on_session_start():
     with st.sidebar:
         pixel_size_input()
-        reverse_channels_input()
     files = st.session_state.files_uploaded
-    displayed_names = create_display_files(files)
+    displayed_names = [e["display_name"] for e in files]
     with st.sidebar:
         selected_file = st.selectbox(
             "Pick an image",
@@ -288,35 +265,29 @@ if on_session_start():
 
     # Find index of the selected file
     index = displayed_names.index(selected_file)
-    file = files[index]
+    entry = files[displayed_names.index(selected_file)]
 
-    file_id = build_file_id(
-        file,
+    file_id = build_entry_id(
+        entry,
         pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
-        reverse_channels=st.session_state.get("reverse_channels", DV.REVERSE_CHANNELS),
         clarity=st.session_state.get("clarity", DV.CLARITY),
+        multitile_strategy=st.session_state.get("multitile_strategy", "compact"),
     )
-    if isinstance(file, tuple):
-        if file[0] is None or file[1] is None:
-            missing = "First analog" if file[0] is None else "Second analog"
-            st.warning(
-                f"In this image, {missing} channel is missing. We assume the intended goal is to segment the DNA fibers without differentiation. \
-                       Note the model may still predict two classes and try to compute a ratio; these informations can be ignored."
-            )
-        image = get_multifile_image(
-            file,
-            clarity=st.session_state.get("clarity", DV.CLARITY),
-            pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
-        )
-    else:
-        image = get_image(
-            file,
-            reverse_channel=st.session_state.get(
-                "reverse_channels", DV.REVERSE_CHANNELS
-            ),
-            id=file_id,
-            pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
-            clarity=st.session_state.get("clarity", DV.CLARITY),
+    image = get_image_from_entry(
+        entry,
+        pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
+        clarity=st.session_state.get("clarity", DV.CLARITY),
+        id=file_id,
+        multitile_strategy=st.session_state.get("multitile_strategy", "compact"),
+    )
+    schema = st.session_state.get("schema", [])
+    missing = [
+        r["name"] for r in schema if r["required"] and r["id"] not in entry["sources"]
+    ]
+    if missing:
+        st.warning(
+            f"Missing required role(s): {', '.join(missing)}. "
+            "The model may still produce a 2-class prediction; treat ratios with skepticism."
         )
 
     h, w = image.shape[:2]
