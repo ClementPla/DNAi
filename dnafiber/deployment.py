@@ -1,5 +1,7 @@
 import math
 import time
+import warnings
+from pathlib import Path
 from dnafiber.error_detection.inference import detect_error
 from dnafiber.inference import run_model, probas_to_segmentation
 import cv2
@@ -13,43 +15,61 @@ from dnafiber.data.utils import numpy_to_base64_png
 from dnafiber.data.utils import load_image, load_multifile_image
 import numpy as np
 
+from dnafiber.ui.io import load_image_from_entry
+
 
 def run_one_file(
     file,
     model,
-    reverse_channels=False,
+    reverse_channels=False, 
+    channel_mapping: dict[str, int] | None = None, # Should contain at least "analog_1" and "analog_2" keys if provided.
     pixel_size=0.13,
     use_tta=True,
     verbose=True,
-    low_end_hardware=False,
+    low_end_hardware=False, 
     clarity=1.0,
     error_detection_model=None,
     device=None,
+    multitile_strategy: str = "compact", 
 ) -> Fibers:
     start = time.time()
-
+    if reverse_channels:
+        warnings.warn("reverse_channels is deprecated and will be removed in a future version. Please use channel_mapping instead.")
+    if channel_mapping is not None and reverse_channels:
+        warnings.warn("Both channel_mapping and reverse_channels are specified. channel_mapping will be used.")
+    if channel_mapping is not None and not all(role in channel_mapping for role in ["analog_1", "analog_2"]):
+        raise ValueError("channel_mapping must contain at least 'analog_1' and 'analog_2' keys.")
     is_cuda_available = torch.cuda.is_available()
     if isinstance(file, np.ndarray):
-        # If the file is already an image array, we don't need to load it
-        image = file
-        filename = "Provided Image"
+            image = file
+            filename = "Provided Image"
     elif isinstance(file, tuple):
-        if file[0] is None:
-            filename = file[1].name
-        if file[1] is None:
-            filename = file[0].name
-        image = load_multifile_image(
-            file,
+        # File-per-analog mode (legacy path).
+        filename = (file[0] or file[1]).name
+        image = load_multifile_image(file, pixel_size=pixel_size, clarity=clarity)
+    elif channel_mapping is not None:
+        # New path: explicit mapping. Build an ad-hoc entry and reuse the
+        # GUI loader so script and GUI go through the same code path.
+        entry = {
+            "id": str(file),
+            "display_name": Path(file).name,
+            "mode": "multichannel",
+            "sources": {role: (Path(file), idx) for role, idx in channel_mapping.items()},
+            "extra_labels": {},
+        }
+        filename = entry["display_name"]
+        image = load_image_from_entry(
+            entry,
             pixel_size=pixel_size,
             clarity=clarity,
+            multitile_strategy=multitile_strategy,
         )
     else:
+        # Legacy single-file path with reverse_channels toggle.
         filename = file.name
         image = load_image(
-            file,
-            reverse_channels,
-            pixel_size=pixel_size,
-            clarity=clarity,
+            file, reverse_channels,
+            pixel_size=pixel_size, clarity=clarity,
         )
     if verbose:
         print(f"Image loading time: {time.time() - start:.2f} seconds for {filename}")
