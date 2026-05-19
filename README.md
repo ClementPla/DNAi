@@ -143,19 +143,28 @@ All configurations remain at least **29× faster per fiber** than manual annotat
 ## Citation
 
 If you use DNAi in your research, please cite:
+Clément Playout, Yosra Mehrjoo, Renaud Duval, Marie Carole Boucher, Santiago Costantino, Hugo Wurtele, DNAi: an open-source AI tool for unbiased DNA fiber analysis, Nucleic Acids Research, Volume 54, Issue 7, 24 April 2026, gkag335, https://doi.org/10.1093/nar/gkag335
 
 ```bibtex
-@article {Playout2025.09.30.679603,
-	author = {Playout, Cl{\'e}ment and Mehrjoo, Yosra and Duval, Renaud and Boucher, Marie Carole and Costantino, Santiago and Wurtele, Hugo},
-	title = {DNAi: an open-source AI tool for unbiased DNA fiber analysis},
-	elocation-id = {2025.09.30.679603},
-	year = {2025},
-	doi = {10.1101/2025.09.30.679603},
-	publisher = {Cold Spring Harbor Laboratory},
-	URL = {https://www.biorxiv.org/content/early/2025/10/02/2025.09.30.679603},
-	eprint = {https://www.biorxiv.org/content/early/2025/10/02/2025.09.30.679603.full.pdf},
-	journal = {bioRxiv}
+@article{10.1093/nar/gkag335,
+    author = {Playout, Clément and Mehrjoo, Yosra and Duval, Renaud and Boucher, Marie Carole and Costantino, Santiago and Wurtele, Hugo},
+    title = {DNAi: an open-source AI tool for unbiased DNA fiber analysis},
+    journal = {Nucleic Acids Research},
+    volume = {54},
+    number = {7},
+    pages = {gkag335},
+    year = {2026},
+    month = {04},
+    abstract = {DNA fiber assays are powerful tools for investigating replication dynamics at the single-molecule level. However, their application and widespread adoption has been hampered by the labor-intensive and tedious nature of manual analysis of large numbers of images. Quantification of labeled DNA fibers typically depends on subjective examination, selection, and annotation of individual fibers from fluorescence microscopy images reducing inter-user consistency, reproducibility, and experimental throughput. To address these issues, we developed DNAi, a computer vision tool based on deep learning allowing automated detection and quantification of labeled DNA fiber length. DNAi was trained on a large and diverse dataset of manually annotated images of DNA fibers and matches human performance and accuracy in segmentation and length measurement across a wide range of experimental conditions. The open-source tool includes a user-friendly interface, which permits visual validation and manual selection of segmented fibers. Overall, DNAi enables robust, rapid, and reproducible DNA fiber analysis, and is freely available.},
+    issn = {1362-4962},
+    doi = {10.1093/nar/gkag335},
+    url = {https://doi.org/10.1093/nar/gkag335},
+    eprint = {https://academic.oup.com/nar/article-pdf/54/7/gkag335/68117773/gkag335.pdf},
 }
+
+
+
+
 ```
 
 ## License
