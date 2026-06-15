@@ -6,6 +6,7 @@ from PIL import Image
 import io
 import time
 from dnafiber.model.models_zoo import ENSEMBLE, Models
+from dnafiber.ui.colors import recolor_for_display
 from dnafiber.ui.components import (
     get_mosaic,
     model_configuration_inputs,
@@ -128,9 +129,10 @@ def start_inference(
             )
 
         rescaled_image, scale = rescale_with_cache(image, inference_id)
+        display_image = recolor_for_display(rescaled_image, color1, color2)
         start = time.time()
         selected_fibers_img = fiber_ui(
-            rescaled_image,
+            display_image,
             prediction.svgs(
                 scale=scale,
                 color1=color1,
@@ -138,6 +140,8 @@ def start_inference(
             ),
             pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
             error_threshold=prediction_threshold,
+            first_analog_color=color1,
+            second_analog_color=color2,
             key=inference_id,
         )
     for fiber in prediction:
@@ -145,8 +149,9 @@ def start_inference(
             fiber.proba_error = 1.0 - fiber.proba_error
     with tab_mosaic:
         prediction_mosaic, image_mosaic = get_mosaic(image, prediction, inference_id)
+        display_mosaic = recolor_for_display(image_mosaic, color1, color2)
         selected_fibers = fiber_ui(
-            image_mosaic,
+            display_mosaic,
             prediction_mosaic.svgs(
                 scale=1,
                 color1=color1,
@@ -154,6 +159,8 @@ def start_inference(
             ),
             pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),
             error_threshold=prediction_threshold,
+            first_analog_color=color1,
+            second_analog_color=color2,
             key=inference_id + "_mosaic",
         )
     for fiber in prediction:
@@ -266,7 +273,6 @@ if on_session_start():
     # Find index of the selected file
     index = displayed_names.index(selected_file)
     entry = files[displayed_names.index(selected_file)]
-
     file_id = build_entry_id(
         entry,
         pixel_size=st.session_state.get("pixel_size", DV.PIXEL_SIZE),

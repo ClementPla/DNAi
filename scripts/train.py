@@ -14,7 +14,7 @@ from dnafiber.trainee import Trainee
 import argparse
 from lightning import seed_everything
 from dnafiber.model.utils import upload_to_hub
-
+from pathlib import Path
 
 seed_everything(1234, workers=True)
 
@@ -65,8 +65,8 @@ def train(arch, encoder):
     )
 
     # tuner = Tuner(trainer=trainer)
-    train_dataloader = datamodule.train_dataloader()
-    val_dataloader = datamodule.val_dataloader()
+    # train_dataloader = datamodule.train_dataloader()
+    # val_dataloader = datamodule.val_dataloader()
 
     # lr_finder = tuner.lr_find(
     #     model=trainee,
@@ -82,23 +82,25 @@ def train(arch, encoder):
     # c["training"]["learning_rate"] = new_lr
     # trainee.learning_rate = new_lr
     # trainee.hparams.learning_rate = new_lr
-    trainer.fit(
-        model=trainee,
-        train_dataloaders=train_dataloader,
-        val_dataloaders=val_dataloader,
-    )
+    # trainer.fit(
+    #     model=trainee,
+    #     train_dataloaders=train_dataloader,
+    #     val_dataloaders=val_dataloader,
+    # )
 
     # Load the best model from the checkpoint
-    try:
-        trainer.checkpoint_callback.best_model_path
-    except AttributeError:
-        print("No best model found, using the last checkpoint.")
-        trainer.checkpoint_callback.best_model_path = (
-            trainer.checkpoint_callback.last_model_path
-        )
+    # try:
+    #     trainer.checkpoint_callback.best_model_path
+    # except AttributeError:
+    #     print("No best model found, using the last checkpoint.")
+    #     trainer.checkpoint_callback.best_model_path = (
+    #         trainer.checkpoint_callback.last_model_path
+    #     )
 
     trainee = Trainee.load_from_checkpoint(
-        trainer.checkpoint_callback.best_model_path,
+        Path(
+            "/home/clement/Documents/Projets/DNAFiber/checkpoints/DeepFiberQ++ V3/easy-resonance-30/epoch=549-step=15950.ckpt"
+        ),
         **c["training"],
         **c["model"],
     )

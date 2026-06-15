@@ -5,10 +5,9 @@ import {
   formatLength,
   formatLengthPrecise,
   getScaleInfo,
-  isGreen,
-  isRed,
 } from "../utils"
 import { ExportOptions } from "../components/ContextMenu"
+import { normalizeColor } from "./colors"
 
 interface ExportFiberParams {
   fiber: Fiber
@@ -21,6 +20,8 @@ interface ExportFiberParams {
   margin: number
   strokeScale: number
   options: ExportOptions
+  firstAnalogColor: string
+  secondAnalogColor: string
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -106,6 +107,8 @@ export async function exportFiberAsPng(
     margin,
     strokeScale,
     options,
+    firstAnalogColor,
+    secondAnalogColor,
   } = params
 
   const {
@@ -129,15 +132,19 @@ export async function exportFiberAsPng(
 
   // --- Flattened fiber dimensions ---
   const segments = computeSegments(fiber, pixelSize)
-  const totalLengthPx = segments.reduce((a, s) => a + s.lengthPx, 0)
-  const totalLengthUm = segments.reduce((a, s) => a + s.lengthUm, 0)
-  const greenLength = segments
-    .filter((s) => isGreen(s.color))
-    .reduce((a, s) => a + s.lengthUm, 0)
-  const redLength = segments
-    .filter((s) => isRed(s.color))
-    .reduce((a, s) => a + s.lengthUm, 0)
-  const ratio = redLength > 0 ? (greenLength / redLength).toFixed(2) : "∞"
+  const firstPt = segments[0]?.pts[0]
+  const lastSeg = segments[segments.length - 1]
+  const lastPt = lastSeg?.pts[lastSeg.pts.length - 1]
+
+  const shouldReverse = firstPt && lastPt && firstPt.x > lastPt.x
+  const orderedSegments = shouldReverse ? [...segments].reverse() : segments
+
+  const totalLengthPx = orderedSegments.reduce((a, s) => a + s.lengthPx, 0)
+
+  const firstLength = fiber.firstAnalogPx * pixelSize
+  const secondLength = fiber.secondAnalogPx * pixelSize
+  const totalLengthUm = firstLength + secondLength
+  const ratio = fiber.ratio >= 0 ? fiber.ratio.toFixed(2) : "∞"
 
   const barMaxWidth = Math.max(cropW * 0.8, totalLengthPx)
   const barScale = barMaxWidth / totalLengthPx

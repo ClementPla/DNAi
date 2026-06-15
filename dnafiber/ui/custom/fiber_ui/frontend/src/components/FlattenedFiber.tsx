@@ -5,20 +5,23 @@ import {
   calculatePolylineLength,
   formatLength,
   formatLengthPrecise,
-  isGreen,
-  isRed,
 } from "../utils"
+import { normalizeColor } from "../utils/colors"
 
 interface FlattenedFiberProps {
   fiber: Fiber
   pixelSize: number
   margin: number
+  firstAnalogColor: string
+  secondAnalogColor: string
 }
 
 export const FlattenedFiber: React.FC<FlattenedFiberProps> = ({
   fiber,
   pixelSize,
   margin,
+  firstAnalogColor,
+  secondAnalogColor,
 }) => {
   const segments = fiber.points.map((line, i) => {
     const pts = parsePolylinePoints(line)
@@ -35,16 +38,11 @@ export const FlattenedFiber: React.FC<FlattenedFiberProps> = ({
   const orderedSegments = shouldReverse ? [...segments].reverse() : segments
 
   const totalLengthPx = orderedSegments.reduce((a, s) => a + s.lengthPx, 0)
-  const totalLengthUm = orderedSegments.reduce((a, s) => a + s.lengthUm, 0)
 
-  const greenLength = orderedSegments
-    .filter((s) => isGreen(s.color))
-    .reduce((a, s) => a + s.lengthUm, 0)
-  const redLength = orderedSegments
-    .filter((s) => isRed(s.color))
-    .reduce((a, s) => a + s.lengthUm, 0)
-  const ratio = redLength > 0 ? (greenLength / redLength).toFixed(2) : "∞"
-
+  const firstLength = fiber.firstAnalogPx * pixelSize
+  const secondLength = fiber.secondAnalogPx * pixelSize
+  const totalLengthUm = firstLength + secondLength
+  const ratio = fiber.ratio >= 0 ? fiber.ratio.toFixed(2) : "∞"
   const barWidth = totalLengthPx
   const barHeight = 8
   const fontSize = 8
@@ -92,7 +90,7 @@ export const FlattenedFiber: React.FC<FlattenedFiberProps> = ({
                 fontFamily="system-ui, sans-serif"
                 style={{ textShadow: "0 0 2px black, 0 0 2px black" }}
               >
-                {formatLength(seg.lengthUm)}
+                {formatLength(fiber.segmentLengthsPx[i] * pixelSize)}
               </text>
             )}
           </g>
@@ -109,7 +107,8 @@ export const FlattenedFiber: React.FC<FlattenedFiberProps> = ({
       >
         Total: {formatLengthPrecise(totalLengthUm)}
         {" · "}
-        <tspan fill="#90EE90">G</tspan>/<tspan fill="#FF6B6B">R</tspan>: {ratio}
+        <tspan fill={secondAnalogColor}>2nd</tspan>/
+        <tspan fill={firstAnalogColor}>1st</tspan>: {ratio}
       </text>
     </g>
   )

@@ -17,7 +17,15 @@ else:
     _component_func = components.declare_component("fiber_ui", path=build_dir)
 
 
-def fiber_ui(image, fibers, pixel_size, error_threshold=0.5, key=None):
+def fiber_ui(
+    image,
+    fibers,
+    pixel_size,
+    error_threshold=0.5,
+    first_analog_color="#FF0000",
+    second_analog_color="#00FF00",
+    key=None,
+):
     """Create a new instance of "fiber_ui".
 
     Parameters
@@ -40,6 +48,8 @@ def fiber_ui(image, fibers, pixel_size, error_threshold=0.5, key=None):
         pixel_size=pixel_size,
         error_threshold=error_threshold,
         key=key,
+        first_analog_color=first_analog_color,
+        second_analog_color=second_analog_color,
         default=[],
     )
     print("Component call time:", time.time() - start)

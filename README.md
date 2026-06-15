@@ -45,6 +45,12 @@ DNAi requires **Python 3.10+**. We recommend using a virtual environment.
 ```bash
 pip install git+https://github.com/ClementPla/DNAi.git
 ```
+Or, if you have a cuda-compatiable GPU:
+
+```bash
+pip install git+https://github.com/ClementPla/DNAi.git[gpu]
+```
+However, you may prefer install torch yourself in the case, depending on the cuda drivers at your disposal.
 
 ### Graphical User Interface
 

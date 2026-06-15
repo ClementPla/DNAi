@@ -17,7 +17,7 @@ def generate_svg(fiber: FiberProps, scale=1.0, color1="red", color2="green") -> 
 
     traces_polylines = []
     colors = []
-
+    seg_counts = []  # per-run pixel counts, parallel to traces_polylines/colors
     if len(data) == 0:
         return None
 
@@ -38,7 +38,7 @@ def generate_svg(fiber: FiberProps, scale=1.0, color1="red", color2="green") -> 
                 )
             )
             colors.append(color1 if current_color == 1 else color2)
-
+            seg_counts.append(len(current_line))
             # Start new line
             current_color = color
             current_line = [(x, y)]
@@ -55,7 +55,9 @@ def generate_svg(fiber: FiberProps, scale=1.0, color1="red", color2="green") -> 
             )
         )
         colors.append(color1 if current_color == 1 else color2)
+        seg_counts.append(len(current_line))
 
+    red_count, green_count = fiber.counts
     bbox_data["points"] = traces_polylines
     bbox_data["colors"] = colors
     bbox_data["x"] = int(bbox_data["x"] * scale)
@@ -68,6 +70,9 @@ def generate_svg(fiber: FiberProps, scale=1.0, color1="red", color2="green") -> 
     bbox_data["proba_error"] = (
         fiber.proba_error if not np.isnan(fiber.proba_error) else -1
     )
+    bbox_data["segmentLengthsPx"] = seg_counts
+    bbox_data["firstAnalogPx"] = float(red_count)  # matches table's `r`
+    bbox_data["secondAnalogPx"] = float(green_count)  # matches table's `g
 
     return json.dumps(bbox_data)
 

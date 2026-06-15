@@ -10,4 +10,7 @@ export interface Fiber {
   colors: string[]
   proba_error: number
   pixel_size: number
+  firstAnalogPx: number
+  secondAnalogPx: number
+  segmentLengthsPx: number[]
 }

@@ -48,14 +48,3 @@ export function formatLength(um: number): string {
 export function formatLengthPrecise(um: number): string {
   return um >= 1000 ? `${(um / 1000).toFixed(2)} mm` : `${um.toFixed(1)} μm`
 }
-
-export const isGreen = (color: string) =>
-  color.toLowerCase().includes("green") ||
-  color === "#00ff00" ||
-  color === "#00FF00"
-
-export const isRed = (color: string) =>
-  color.toLowerCase().includes("red") ||
-  color === "#ff0000" ||
-  color === "#f00" ||
-  color === "#FF0000"

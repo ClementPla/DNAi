@@ -318,11 +318,6 @@ def render_multichannel_tab(extensions: list[str]) -> None:
         st.success(msg)
 
 
-# ---------------------------------------------------------------------------
-# Per-role tab (First analog + Second analog only)
-# ---------------------------------------------------------------------------
-
-
 def render_per_role_tab(extensions: list[str]) -> None:
     st.caption(
         "Provide one folder (or file) per analog. Files are paired across "

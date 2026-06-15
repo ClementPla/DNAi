@@ -48,7 +48,16 @@ function FiberComponent(
   this: any,
   { args, disabled, width, theme }: ComponentProps
 ): ReactElement {
-  let { image, elements, image_w, image_h, pixel_size, error_threshold } = args
+  let {
+    image,
+    elements,
+    image_w,
+    image_h,
+    pixel_size,
+    error_threshold,
+    first_analog_color,
+    second_analog_color,
+  } = args
 
   elements = elements.map((el: any): Fiber => {
     if (typeof el === "string") return JSON.parse(el) as Fiber
@@ -179,6 +188,8 @@ function FiberComponent(
         margin,
         strokeScale: strokeScale[0],
         options,
+        firstAnalogColor: first_analog_color,
+        secondAnalogColor: second_analog_color,
       })
     },
     [
@@ -459,6 +470,8 @@ function FiberComponent(
                             fiber={hovered}
                             pixelSize={pixel_size}
                             margin={margin}
+                            firstAnalogColor={first_analog_color}
+                            secondAnalogColor={second_analog_color}
                           />
                         ) : null
                       })()}

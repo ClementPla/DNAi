@@ -170,5 +170,5 @@ def build_entry_id(
     mapping_sig = "|".join(
         f"{role}={path}#{ch}" for role, (path, ch) in sorted(entry["sources"].items())
     )
-    payload = f"{entry['id']}::{entry['mode']}::{mapping_sig}::ps={pixel_size:.6f}::cl={clarity:.6f}::mts={multitile_strategy}"
+    payload = f"{entry['id']}::{entry['mode']}::{mapping_sig}::ps={pixel_size:.6f}::cl={clarity:.6f}::mts={multitile_strategy}::sources={str(entry['sources'])}"
     return hashlib.sha1(payload.encode("utf-8")).hexdigest()[:16]
