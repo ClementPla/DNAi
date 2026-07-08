@@ -159,24 +159,26 @@ def distribution_analysis(predictions: Fibers):
 @st.cache_data(max_entries=5)
 def rescale_with_cache(_image, inference_id):
     image = _image
-    if image.max() > 25:
+    if (
+        image.max() > 25
+    ):  # If the image is already in 8-bit format, we skip normalization
         image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
 
-        max_size = 10000
-        h, w = image.shape[:2]
-        size = max(h, w)
-        scale = 1.0
-        if size > max_size:
-            scale = max_size / size
-            image = cv2.resize(
-                image,
-                None,
-                fx=scale,
-                fy=scale,
-                interpolation=cv2.INTER_LINEAR,
-            )
+    max_size = 10000
+    h, w = image.shape[:2]
+    size = max(h, w)
+    scale = 1.0
+    if size > max_size:
+        scale = max_size / size
+        image = cv2.resize(
+            image,
+            None,
+            fx=scale,
+            fy=scale,
+            interpolation=cv2.INTER_LINEAR,
+        )
 
-        return image, scale
+    return image, scale
 
 
 def get_mosaic(_image, _prediction, inference_id):
