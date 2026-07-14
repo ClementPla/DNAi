@@ -3,6 +3,7 @@ from tifffile import imread
 import cv2
 import numpy as np
 
+from dnafiber.config import get_config
 from dnafiber.data.nd2_format import stitch_nd2_combined
 
 
@@ -24,7 +25,7 @@ def format_raw_image(image):
 
 
 def read_czi(filepath):
-    with CziFile(filepath) as czi:
+    with CziFile(filepath, detectmosaic=get_config().czi_detect_mosaic) as czi:
         data = czi.asarray().squeeze()
     data = format_raw_image(data)
     return data
