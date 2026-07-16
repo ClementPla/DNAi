@@ -42,7 +42,7 @@ dependencies = [
     "huggingface-hub>=0.20.0",
     
     # Image formats - compatible release (allows patches)
-    "czifile~=2019.7.2",
+    "pylibCZIrw>=4.1.0",
     "tifffile>=2024.1.0",
     "mrc>=0.3.0",
     

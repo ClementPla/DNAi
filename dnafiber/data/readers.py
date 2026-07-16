@@ -1,9 +1,8 @@
-from czifile import CziFile
+from pylibCZIrw import czi as pyczi
 from tifffile import imread
 import cv2
 import numpy as np
 
-from dnafiber.config import get_config
 from dnafiber.data.nd2_format import stitch_nd2_combined
 
 
@@ -25,8 +24,14 @@ def format_raw_image(image):
 
 
 def read_czi(filepath):
-    with CziFile(filepath, detectmosaic=get_config().czi_detect_mosaic) as czi:
-        data = czi.asarray().squeeze()
+    with pyczi.open_czi(str(filepath)) as czidoc:
+        c_start, c_end = czidoc.total_bounding_box["C"]
+        # read() composes the full mosaic for each channel; drops the
+        # trailing singleton channel axis to get (H, W) planes.
+        planes = [
+            czidoc.read(plane={"C": c})[..., 0] for c in range(c_start, c_end)
+        ]
+    data = np.stack(planes, axis=0).squeeze()  # (C, H, W)
     data = format_raw_image(data)
     return data
 
