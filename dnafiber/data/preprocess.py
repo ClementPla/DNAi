@@ -1,7 +1,7 @@
+from time import time
+
 import cv2
 import numpy as np
-
-from time import time
 
 REF_PIXEL_SIZE = 0.26
 REF_DOWNSAMPLE = 8

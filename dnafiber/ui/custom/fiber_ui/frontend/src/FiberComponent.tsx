@@ -57,6 +57,7 @@ function FiberComponent(
     error_threshold,
     first_analog_color,
     second_analog_color,
+    selected_ids,
   } = args
 
   elements = elements.map((el: any): Fiber => {
@@ -81,7 +82,7 @@ function FiberComponent(
   // ───────────────────────────────────────────
 
   // --- Hooks ---
-  const inspection = useInspection()
+  const inspection = useInspection(selected_ids ?? [])
   const fiberTypes = useFiberTypes(elements)
 
   // --- Refs ---
@@ -267,9 +268,13 @@ function FiberComponent(
             onToggleSidebar={() => setSidebarOpen((p) => !p)}
             onResetAll={inspection.resetAll}
             onSend={() =>
-              Streamlit.setComponentValue(inspection.selectedFibers)
+              Streamlit.setComponentValue({
+                selected: inspection.selectedFibers,
+                nonce: `${Date.now()}-${Math.random()}`,
+              })
             }
             selectedCount={inspection.selectedFibers.length}
+            sendDisabled={!inspection.isDirty}
             theme={theme}
           />
           <div

@@ -14,6 +14,12 @@ from dnafiber.ui.io import (
 )
 from dnafiber.model.models_zoo import ENSEMBLE, Models
 from dnafiber.postprocess.types import FiberType
+from dnafiber.ui.overrides import (
+    all_overrides_signature,
+    apply_overrides,
+    get_overrides,
+    overrides_with_other_settings,
+)
 from dnafiber.ui.inference import (
     detect_error_with_cache,
     get_postprocess_model,
@@ -202,8 +208,12 @@ def infer(
             _batch_size=32 if low_end_hardware else 64,
             key=inference_id,
         )
+    # Manual overrides made in the Viewer take precedence over the model verdicts
+    has_overrides = bool(get_overrides(inference_id))
+    results = apply_overrides(results, inference_id)
+    if predict_error or has_overrides:
         results = results.filter_errors(prediction_threshold)
-    df = show_fibers_cacheless(results)
+    df = show_fibers_cacheless(results, overrides=get_overrides(inference_id))
     df["image_name"] = entry["display_name"]
     return df
 
@@ -222,6 +232,8 @@ def run_inference(model_name, use_tta=DV.USE_TTA, use_correction=DV.USE_CORRECTI
     diag_container = create_diagnostics_container()
     all_entries = st.session_state.files_uploaded
     all_results = []
+    n_applied = 0
+    mismatched = []
 
     for i, entry in enumerate(all_entries):
         update_diagnostics(diag_container)
@@ -245,6 +257,10 @@ def run_inference(model_name, use_tta=DV.USE_TTA, use_correction=DV.USE_CORRECTI
             ),
         )
 
+        n_applied += len(get_overrides(inference_id))
+        n_other = overrides_with_other_settings(entry["id"], inference_id)
+        if n_other:
+            mismatched.append(f"{filename} ({n_other})")
         try:
             df = infer(
                 entry,
@@ -275,6 +291,16 @@ def run_inference(model_name, use_tta=DV.USE_TTA, use_correction=DV.USE_CORRECTI
 
     my_bar.empty()
     st.session_state.results = pd.DataFrame(results_dict)
+    st.session_state.results_overrides_signature = all_overrides_signature()
+    if n_applied:
+        st.info(f"Applied {n_applied} manual override(s) made in the Viewer.")
+    if mismatched:
+        st.warning(
+            "Some manual overrides were NOT applied because they were made in the "
+            "Viewer with different settings (model, TTA, memory-saving mode, pixel "
+            "size or clarity): " + ", ".join(mismatched) + ". Use the same settings "
+            "as in the Viewer, or redo the overrides with the current settings."
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -303,6 +329,14 @@ if st.session_state.get("files_uploaded", None):
             )
             st.balloons()
         if st.session_state.get("results", None) is not None:
+            if (
+                st.session_state.get("results_overrides_signature", "[]")
+                != all_overrides_signature()
+            ):
+                st.info(
+                    "Manual overrides changed since these results were computed. "
+                    "Press **Run Segmentation** again to apply them."
+                )
             table_components(
                 st.session_state.results,
                 error_threshold=st.session_state.get(

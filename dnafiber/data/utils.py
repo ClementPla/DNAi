@@ -1,18 +1,19 @@
-from PIL import Image
-import io
 import base64
-from xml.dom import minidom
+import io
+import math
+from pathlib import Path
+from time import time
+
 import cv2
 import numpy as np
-import math
 import streamlit as st
-from dnafiber.data.readers import read_img, format_raw_image
-from dnafiber.data.preprocess import preprocess
-from dnafiber.postprocess.core import extract_fibers
-from time import time
+from PIL import Image
 from skimage.morphology import skeletonize
 from skimage.segmentation import expand_labels
-from pathlib import Path
+
+from dnafiber.data.preprocess import preprocess
+from dnafiber.data.readers import format_raw_image, read_img
+from dnafiber.postprocess.core import extract_fibers
 
 
 def extract_bboxes(mask):
@@ -177,7 +178,7 @@ def load_multifile_image(_filepaths, pixel_size=0.13, clarity=1.0):
     return result
 
 
-def mask_filepath_to_fibers(filepath, RGB2GRB=False, disentangle_crossing=True):
+def all_(filepath, RGB2GRB=False, disentangle_crossing=True):
     mask = cv2.imread(str(filepath), cv2.IMREAD_COLOR_RGB)
     if RGB2GRB:
         mask = mask[:, :, [1, 0, 2]]

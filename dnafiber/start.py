@@ -6,7 +6,45 @@ import importlib.metadata
 import json
 import requests
 import sys
-import tempfile
+
+REPO_URL = "git+https://github.com/ClementPla/DNAi.git"
+
+
+def pip_install_command():
+    """Upgrade DNAi in the environment of the running interpreter, without
+    reinstalling dependencies that are already satisfied (e.g. a CUDA torch)."""
+    return [
+        sys.executable,
+        "-m",
+        "pip",
+        "install",
+        "--upgrade",
+        "--upgrade-strategy",
+        "only-if-needed",
+        REPO_URL,
+    ]
+
+
+def windows_update_worker(parent_pid):
+    """Source of a standalone script (no dnafiber import, so nothing of the
+    package stays locked) that waits for `parent_pid` to exit, then updates."""
+    return f"""
+import ctypes, subprocess, time
+SYNCHRONIZE, INFINITE = 0x00100000, 0xFFFFFFFF
+kernel32 = ctypes.windll.kernel32
+print("Waiting for DNAi to close...")
+handle = kernel32.OpenProcess(SYNCHRONIZE, False, {parent_pid})
+if handle:
+    kernel32.WaitForSingleObject(handle, INFINITE)
+    kernel32.CloseHandle(handle)
+time.sleep(2)  # let the DNAI.exe launcher exit too
+print("Updating DNAi from GitHub...")
+if subprocess.call({pip_install_command()!r}) == 0:
+    print("\\nUpdate complete. You can now restart DNAi.")
+else:
+    print("\\nUpdate FAILED. See the messages above.")
+input("Press Enter to close this window...")
+"""
 
 
 def get_local_commit(package_name="dnafiber"):
@@ -63,17 +101,18 @@ def get_remote_commit(repo="ClementPla/DNAi"):
 
 
 def check_version():
-    local = get_local_commit()[:7]
-    remote = get_remote_commit()[:7]
+    local = get_local_commit()
     if not local:
         print("⚠️ Could not determine local commit. Proceeding without update check.")
         return
+    local = local[:7]
+    remote = get_remote_commit()[:7]
     if local != remote:
         print(
             f"⚠️ Your install is outdated.\nLocal: {local[:7]} vs Remote: {remote[:7]}"
         )
         print(
-            "👉 Run: pip install --upgrade git+https://github.com/ClementPla/DNAi.git or auto-update"
+            f"👉 Run: {subprocess.list2cmdline(pip_install_command())} or auto-update"
         )
     else:
         print("✅ You are on the latest version.")
@@ -91,37 +130,31 @@ def main():
     if valid is None:
         pass  # Couldn't check, continue to app
     elif not valid:
-        response = input("Do you want to update now? [y/N]: ")
-        if response.lower() == "y":
+        try:
+            response = input("Do you want to update now? [y/N]: ")
+        except EOFError:
+            response = ""
+        if response.strip().lower() == "y":
             if sys.platform == "win32":
-                script = tempfile.NamedTemporaryFile(
-                    mode="w", suffix=".bat", delete=False
-                )
-                script.write(f"""@echo off
-echo Closing existing sessions...
-taskkill /IM streamlit.exe /F >nul 2>&1
-timeout /t 2 /nobreak >nul
-echo Updating DNAi from GitHub...
-"{sys.executable}" -m pip install --upgrade --force-reinstall git+https://github.com/ClementPla/DNAi.git
-echo Update complete. Please restart the application.
-exit
-""")
-                script.close()
+                # The running DNAI.exe/python.exe are locked on Windows, so the
+                # update runs in its own console once this process has exited.
                 subprocess.Popen(
-                    ["cmd", "/c", script.name],
-                    creationflags=subprocess.DETACHED_PROCESS,
+                    [sys.executable, "-c", windows_update_worker(os.getpid())],
+                    creationflags=subprocess.CREATE_NEW_CONSOLE,
+                )
+                print(
+                    "Update starting in a new window. Close any other DNAi window, "
+                    "then restart DNAi once it is complete."
                 )
             else:
-                subprocess.Popen(
-                    "sleep 2 && pip install --upgrade --upgrade-strategy only-if-needed "
-                    "git+https://github.com/ClementPla/DNAi.git",
-                    shell=True,
-                    start_new_session=True,
-                )
-
-            print(
-                "Update starting in background. You will need to restart the app manually."
-            )
+                # Installed files can be replaced while running on Linux/macOS,
+                # so update in the foreground and report the result.
+                print("Updating DNAi from GitHub...")
+                result = subprocess.run(pip_install_command())
+                if result.returncode != 0:
+                    print("❌ Update failed. See the messages above.")
+                    sys.exit(result.returncode)
+                print("✅ Update complete. Please restart DNAi.")
             sys.exit(0)
 
     # Start the Streamlit application
@@ -129,6 +162,8 @@ exit
     local_dir = os.path.dirname(os.path.abspath(__file__))
     subprocess.run(
         [
+            sys.executable,
+            "-m",
             "streamlit",
             "run",
             os.path.join(local_dir, "ui", "Welcome.py"),

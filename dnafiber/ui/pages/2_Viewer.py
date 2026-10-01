@@ -25,6 +25,13 @@ from dnafiber.ui.inference import (
     ui_inference,
 )
 from dnafiber.ui.io import build_entry_id, get_image_from_entry
+from dnafiber.ui.overrides import (
+    apply_overrides,
+    get_overrides,
+    overridden_ids,
+    overrides_signature,
+    update_overrides_from_component,
+)
 from dnafiber.ui.utils import (
     build_inference_id,
     get_resized_image,
@@ -67,6 +74,7 @@ def start_inference(
     prediction_threshold=DV.PREDICTION_THRESHOLD,
     inference_id=None,
     detect_errors=DV.DETECT_ERRORS,
+    entry_id=None,
 ):
     org_h, org_w = image.shape[:2]
     image = cv2.normalize(image, None, 0, 255, cv2.NORM_MINMAX, dtype=cv2.CV_8U)
@@ -107,13 +115,18 @@ def start_inference(
                 else 64,
                 key=inference_id,
             )
+    # Model verdicts, before the user's manual overrides
+    model_prediction = prediction
+    prediction = apply_overrides(model_prediction, inference_id)
+    committed_selection = overridden_ids(inference_id)
+    hide_error = False
     if detect_errors:
         hide_error = st.checkbox(
             "Hide detected errors",
             help="Toggle the visibility of fibers detected as errors in the viewer and table.",
         )
         if hide_error:
-            prediction = prediction.filter_errors()
+            prediction = prediction.filter_errors(prediction_threshold)
     tab_viewer, tab_mosaic, tab_table, tab_distributions = st.tabs(
         ["Viewer", "Mosaic", "Table", "Distribution"]
     )
@@ -142,11 +155,18 @@ def start_inference(
             error_threshold=prediction_threshold,
             first_analog_color=color1,
             second_analog_color=color2,
+            selected_ids=committed_selection,
             key=inference_id,
         )
-    for fiber in prediction:
-        if fiber.fiber_id in selected_fibers_img:
-            fiber.proba_error = 1.0 - fiber.proba_error
+    if update_overrides_from_component(
+        selected_fibers_img,
+        inference_id,
+        inference_id,
+        model_prediction,
+        prediction_threshold,
+        entry_id=entry_id,
+    ):
+        st.rerun()
     with tab_mosaic:
         prediction_mosaic, image_mosaic = get_mosaic(image, prediction, inference_id)
         display_mosaic = recolor_for_display(image_mosaic, color1, color2)
@@ -161,11 +181,18 @@ def start_inference(
             error_threshold=prediction_threshold,
             first_analog_color=color1,
             second_analog_color=color2,
+            selected_ids=committed_selection,
             key=inference_id + "_mosaic",
         )
-    for fiber in prediction:
-        if fiber.fiber_id in selected_fibers:
-            fiber.proba_error = 1.0 - fiber.proba_error
+    if update_overrides_from_component(
+        selected_fibers,
+        inference_id + "_mosaic",
+        inference_id,
+        model_prediction,
+        prediction_threshold,
+        entry_id=entry_id,
+    ):
+        st.rerun()
 
     st.download_button(
         label="Download Fibers object",
@@ -180,7 +207,8 @@ def start_inference(
         else:
             df = show_fibers(
                 _prediction=prediction,
-                inference_id=inference_id,
+                inference_id=f"{inference_id}|hide={hide_error}|{overrides_signature(inference_id)}",
+                _overrides=get_overrides(inference_id),
             )
             table_components(df, error_threshold=prediction_threshold)
     with tab_distributions:
@@ -326,6 +354,7 @@ if on_session_start():
         detect_errors=st.session_state.get(
             "use_error_detection_model", DV.DETECT_ERRORS
         ),
+        entry_id=entry["id"],
     )
 
     sidebar_diagnostics()

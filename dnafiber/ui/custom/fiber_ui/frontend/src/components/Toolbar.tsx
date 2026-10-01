@@ -410,6 +410,7 @@ interface ToolbarProps {
   onResetAll: () => void
   onSend: () => void
   selectedCount: number
+  sendDisabled: boolean
   theme: any
 }
 
@@ -432,6 +433,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onResetAll,
   onSend,
   selectedCount,
+  sendDisabled,
   theme,
 }) => {
   const colors = React.useMemo(() => buildColors(theme), [theme])
@@ -591,9 +593,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           icon={Icons.send}
           label={`Send${selectedCount > 0 ? ` · ${selectedCount}` : ""}`}
           onClick={onSend}
-          disabled={selectedCount === 0}
+          disabled={sendDisabled}
           accent
-          title="Send selected fiber IDs to Streamlit"
+          title="Send selected fiber IDs to Streamlit (selected fibers have their error status flipped, also in the Analysis tab)"
           colors={colors}
         />
       </GroupPill>

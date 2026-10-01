@@ -24,15 +24,21 @@ def fiber_ui(
     error_threshold=0.5,
     first_analog_color="#FF0000",
     second_analog_color="#00FF00",
+    selected_ids=None,
     key=None,
 ):
     """Create a new instance of "fiber_ui".
 
     Parameters
     ----------
+    selected_ids: list[int], optional
+        Fiber ids currently committed as selected (manual error overrides).
+        The frontend initialises and resyncs its selection from it.
 
     Returns
     -------
+    None until the user presses "Send", then a dict
+    ``{"selected": list[int], "nonce": float}``. The nonce is unique per send.
 
     """
 
@@ -50,7 +56,8 @@ def fiber_ui(
         key=key,
         first_analog_color=first_analog_color,
         second_analog_color=second_analog_color,
-        default=[],
+        selected_ids=[int(i) for i in (selected_ids or [])],
+        default=None,
     )
     print("Component call time:", time.time() - start)
     return component_value

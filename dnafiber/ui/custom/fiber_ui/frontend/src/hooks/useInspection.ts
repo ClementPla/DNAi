@@ -1,9 +1,21 @@
-import { useState, useCallback, useRef } from "react"
+import { useState, useCallback, useRef, useEffect } from "react"
 import { INSPECTION_DELAY } from "../utils"
 
-export function useInspection() {
+const selectionKey = (ids: number[]) =>
+  [...ids].sort((a, b) => a - b).join(",")
+
+export function useInspection(committedSelection: number[] = []) {
   const [inspectedFibers, setInspectedFibers] = useState<Set<number>>(new Set())
-  const [selectedFibers, setSelectedFibers] = useState<number[]>([])
+  const [selectedFibers, setSelectedFibers] =
+    useState<number[]>(committedSelection)
+
+  // Resync with the selection committed on the Python side (e.g. after the
+  // other viewer instance sent its selection, or after a remount).
+  const committedKey = selectionKey(committedSelection)
+  useEffect(() => {
+    setSelectedFibers(committedKey ? committedKey.split(",").map(Number) : [])
+  }, [committedKey])
+  const isDirty = selectionKey(selectedFibers) !== committedKey
   const [hoveredFiberId, setHoveredFiberId] = useState<number | null>(null)
   const [hideInspected, setHideInspected] = useState(false)
   const hoverTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -45,6 +57,7 @@ export function useInspection() {
     inspectedFibers,
     setInspectedFibers,
     selectedFibers,
+    isDirty,
     hoveredFiberId,
     hideInspected,
     setHideInspected,

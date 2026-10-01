@@ -14,13 +14,14 @@ from dnafiber.images.mosaic import mosaic
 
 
 @st.cache_data
-def show_fibers(_prediction, inference_id=None):
-    return show_fibers_cacheless(
-        _prediction,
-    )
+def show_fibers(_prediction, inference_id=None, _overrides=None):
+    # `inference_id` must change whenever `_overrides` does (it is not hashed)
+    return show_fibers_cacheless(_prediction, overrides=_overrides)
 
 
-def show_fibers_cacheless(_prediction):
+def show_fibers_cacheless(_prediction, overrides=None):
+    """`overrides` maps fiber ids to the user's manual verdict (True = error)."""
+    overrides = overrides or {}
     data = dict(
         fiber_id=[],
         firstAnalog=[],
@@ -29,6 +30,7 @@ def show_fibers_cacheless(_prediction):
         fiber_type=[],
         # visualization=[],
         proba_error=[],
+        manual_override=[],
     )
 
     for fiber in _prediction:
@@ -43,6 +45,10 @@ def show_fibers_cacheless(_prediction):
         )
         data["fiber_type"].append(fiber.fiber_type)
         data["proba_error"].append(fiber.proba_error)
+        verdict = overrides.get(fiber.fiber_id)
+        data["manual_override"].append(
+            "" if verdict is None else ("Marked error" if verdict else "Marked valid")
+        )
 
     df = pd.DataFrame(data)
     df = df.rename(
@@ -52,12 +58,20 @@ def show_fibers_cacheless(_prediction):
             "ratio": "Ratio",
             "fiber_type": "Fiber type",
             "fiber_id": "Fiber ID",
+            "manual_override": "Manual override",
         }
     )
     return df
 
 
-def table_components(df, error_threshold):
+def table_components(df, error_threshold, key=None):
+    if "Manual override" in df.columns and (df["Manual override"] != "").any():
+        n_overridden = int((df["Manual override"] != "").sum())
+        if st.checkbox(
+            f"Show only manually overridden fibers ({n_overridden})",
+            key=None if key is None else f"{key}_only_overridden",
+        ):
+            df = df[df["Manual override"] != ""]
     event = st.dataframe(
         df,
         on_select="rerun",
@@ -237,7 +251,7 @@ def model_configuration_inputs():
             "Select a model",
             list(MODELS_ZOO.values()),
             format_func=lambda x: MODELS_ZOO_R[x],
-            index=0,
+            key="model_name",  # keyed so the choice is shared by the Viewer and Analysis pages
             help="Select a model to use for inference",
             disabled=st.session_state.get("use_ensemble", DV.USE_ENSEMBLE),
         )
